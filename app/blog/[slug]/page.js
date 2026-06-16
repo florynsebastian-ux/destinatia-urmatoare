@@ -52,7 +52,7 @@ export default async function ArticlePage({ params }) {
     image: a.cover,
     datePublished: a.publishedAt,
     author: { '@type': 'Person', name: a.author },
-    publisher: { '@type': 'Organization', name: 'Voyagio' },
+    publisher: { '@type': 'Organization', name: 'Următoarea Destinație' },
     mainEntityOfPage: `${process.env.NEXT_PUBLIC_BASE_URL}/blog/${a.slug}`,
   }
 

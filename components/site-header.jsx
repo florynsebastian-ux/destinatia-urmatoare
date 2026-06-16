@@ -45,10 +45,10 @@ export default function SiteHeader() {
             }`}>
               <Plane className="w-4 h-4 text-white" strokeWidth={2.5} />
             </div>
-            <span className={`font-display text-2xl font-bold tracking-tight ${
+            <span className={`font-display text-xl sm:text-2xl font-bold tracking-tight whitespace-nowrap ${
               transparent ? 'text-white' : 'text-slate-900'
             }`}>
-              Voyagio
+              Următoarea Destinație
             </span>
           </Link>
 

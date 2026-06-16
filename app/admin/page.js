@@ -31,7 +31,7 @@ export default function AdminPage() {
   const [view, setView] = useState('list') // list | edit
 
   useEffect(() => {
-    const t = typeof window !== 'undefined' ? localStorage.getItem('voyagio_admin_token') : null
+    const t = typeof window !== 'undefined' ? localStorage.getItem('ud_admin_token') : null
     if (t) {
       setToken(t)
       loadArticles()
@@ -55,7 +55,7 @@ export default function AdminPage() {
       const d = await r.json()
       if (r.ok) {
         setToken(d.token)
-        localStorage.setItem('voyagio_admin_token', d.token)
+        localStorage.setItem('ud_admin_token', d.token)
         toast.success('Bine ai venit!')
         loadArticles()
       } else {
@@ -68,7 +68,7 @@ export default function AdminPage() {
 
   const logout = () => {
     setToken('')
-    localStorage.removeItem('voyagio_admin_token')
+    localStorage.removeItem('ud_admin_token')
   }
 
   const startEdit = (a) => {

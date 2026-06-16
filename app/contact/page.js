@@ -52,7 +52,7 @@ export default function Contact() {
             <div className="bg-gradient-to-br from-cyan-500 to-teal-500 rounded-2xl p-8 text-white mb-6">
               <Mail className="w-8 h-8 mb-4" />
               <h3 className="font-display text-xl font-bold mb-2">Email direct</h3>
-              <a href="mailto:hello@voyagio.ro" className="text-cyan-50 hover:text-white">hello@voyagio.ro</a>
+              <a href="mailto:contact@urmatoareadestinatie.ro" className="text-cyan-50 hover:text-white">contact@urmatoareadestinatie.ro</a>
             </div>
             <div className="bg-white p-6 rounded-2xl border border-slate-100">
               <h3 className="font-display text-xl font-bold mb-4">Găsește-mă pe</h3>

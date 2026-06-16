@@ -7,15 +7,15 @@ import SiteFooter from '@/components/site-footer'
 
 export const metadata = {
   title: {
-    default: 'Voyagio · Ghiduri de călătorie și inspirație pentru aventura ta',
-    template: '%s · Voyagio',
+    default: 'Următoarea Destinație · Ghiduri de călătorie și inspirație pentru aventura ta',
+    template: '%s · Următoarea Destinație',
   },
   description:
     'Descoperă ghiduri de călătorie detaliate, itinerarii, sfaturi de travel și destinații inspiraționale pentru următoarea ta aventură.',
-  keywords: ['travel blog', 'ghiduri turistice', 'destinatii', 'itinerarii', 'sfaturi calatorie'],
+  keywords: ['travel blog', 'ghiduri turistice', 'destinatii', 'itinerarii', 'sfaturi calatorie', 'urmatoarea destinatie'],
   openGraph: {
-    title: 'Voyagio · Ghiduri de călătorie',
-    description: 'Inspiratie, sfaturi si ghiduri detaliate pentru călătoriile tale.',
+    title: 'Următoarea Destinație · Ghiduri de călătorie',
+    description: 'Inspirație, sfaturi și ghiduri detaliate pentru călătoriile tale.',
     type: 'website',
     locale: 'ro_RO',
   },
