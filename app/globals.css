@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 0 0% 100%;
+  --foreground: 215 25% 18%;
+  --card: 0 0% 100%;
+  --card-foreground: 215 25% 18%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 215 25% 18%;
+  --primary: 187 85% 43%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 199 89% 95%;
+  --secondary-foreground: 199 80% 25%;
+  --muted: 210 40% 96%;
+  --muted-foreground: 215 16% 47%;
+  --accent: 187 85% 92%;
+  --accent-foreground: 187 80% 25%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 214 32% 91%;
+  --input: 214 32% 91%;
+  --ring: 187 85% 43%;
+  --radius: 0.75rem;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+.font-display {
+  font-family: 'Playfair Display', Georgia, serif;
+}
+
+/* Custom prose for article body */
+.prose-travel p { margin-bottom: 1.25rem; line-height: 1.8; color: #334155; font-size: 1.05rem; }
+.prose-travel h2 { font-family: 'Playfair Display', serif; font-size: 1.875rem; font-weight: 700; color: #0f172a; margin-top: 2.5rem; margin-bottom: 1rem; }
+.prose-travel h3 { font-family: 'Playfair Display', serif; font-size: 1.4rem; font-weight: 600; color: #0f172a; margin-top: 1.75rem; margin-bottom: 0.75rem; }
+.prose-travel strong { color: #0f172a; font-weight: 600; }
+.prose-travel a { color: #0891b2; text-decoration: underline; }
+.prose-travel ul { list-style: disc; padding-left: 1.5rem; margin-bottom: 1.25rem; color: #334155; }
+.prose-travel ul li { margin-bottom: 0.5rem; line-height: 1.7; }
+.prose-travel blockquote { border-left: 4px solid #06b6d4; padding-left: 1rem; font-style: italic; color: #475569; margin: 1.5rem 0; }
+
+.gradient-text {
+  background: linear-gradient(135deg, #06b6d4 0%, #0ea5e9 50%, #14b8a6 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.hero-overlay {
+  background: linear-gradient(180deg, rgba(15,23,42,0.3) 0%, rgba(15,23,42,0.6) 60%, rgba(15,23,42,0.85) 100%);
+}
+
+.shimmer { animation: shimmer 8s ease-in-out infinite; }
+@keyframes shimmer {
+  0%, 100% { transform: scale(1.02); }
+  50% { transform: scale(1.08); }
+}
+
+.card-hover { transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+.card-hover:hover { transform: translateY(-6px); box-shadow: 0 20px 50px -15px rgba(6, 182, 212, 0.25); }
+
+.img-zoom { transition: transform 0.7s cubic-bezier(0.4, 0, 0.2, 1); }
+.group:hover .img-zoom { transform: scale(1.08); }

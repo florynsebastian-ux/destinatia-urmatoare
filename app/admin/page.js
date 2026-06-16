@@ -1,0 +1,339 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { Lock, LogOut, Plus, Edit, Trash2, Save, X, Eye, Star } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Label } from '@/components/ui/label'
+import { Card } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { toast } from 'sonner'
+import Link from 'next/link'
+
+const BLANK = {
+  title: '', slug: '', excerpt: '', cover: '',
+  continent: 'Europa', country: '', city: '', type: 'City Break',
+  tags: '', readingMinutes: 8, featured: false, author: 'Andrei Munteanu',
+  intro: '', whenToVisit: '', budget: '', transport: '', accommodation: '',
+  attractions: [{ name: '', description: '' }],
+  restaurants: [{ name: '', description: '' }],
+  tips: [''],
+  gallery: [''],
+  publishedAt: new Date().toISOString().slice(0, 10),
+}
+
+export default function AdminPage() {
+  const [token, setToken] = useState('')
+  const [pwd, setPwd] = useState('')
+  const [articles, setArticles] = useState([])
+  const [editing, setEditing] = useState(null)
+  const [view, setView] = useState('list') // list | edit
+
+  useEffect(() => {
+    const t = typeof window !== 'undefined' ? localStorage.getItem('voyagio_admin_token') : null
+    if (t) {
+      setToken(t)
+      loadArticles()
+    }
+  }, [])
+
+  const loadArticles = async () => {
+    const r = await fetch('/api/articles?limit=100')
+    const d = await r.json()
+    setArticles(d.items || [])
+  }
+
+  const login = async (e) => {
+    e.preventDefault()
+    try {
+      const r = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pwd }),
+      })
+      const d = await r.json()
+      if (r.ok) {
+        setToken(d.token)
+        localStorage.setItem('voyagio_admin_token', d.token)
+        toast.success('Bine ai venit!')
+        loadArticles()
+      } else {
+        toast.error(d.error || 'Parolă incorectă')
+      }
+    } catch {
+      toast.error('Eroare')
+    }
+  }
+
+  const logout = () => {
+    setToken('')
+    localStorage.removeItem('voyagio_admin_token')
+  }
+
+  const startEdit = (a) => {
+    if (a) {
+      setEditing({
+        ...a,
+        tags: Array.isArray(a.tags) ? a.tags.join(', ') : (a.tags || ''),
+        attractions: a.attractions?.length ? a.attractions : [{ name: '', description: '' }],
+        restaurants: a.restaurants?.length ? a.restaurants : [{ name: '', description: '' }],
+        tips: a.tips?.length ? a.tips : [''],
+        gallery: a.gallery?.length ? a.gallery : [''],
+      })
+    } else {
+      setEditing({ ...BLANK })
+    }
+    setView('edit')
+  }
+
+  const save = async () => {
+    if (!editing.title || !editing.slug) {
+      toast.error('Titlu și slug sunt obligatorii')
+      return
+    }
+    const body = {
+      ...editing,
+      tags: typeof editing.tags === 'string' ? editing.tags.split(',').map((t) => t.trim()).filter(Boolean) : editing.tags,
+      readingMinutes: parseInt(editing.readingMinutes, 10) || 8,
+      attractions: editing.attractions.filter((a) => a.name),
+      restaurants: editing.restaurants.filter((r) => r.name),
+      tips: editing.tips.filter((t) => t),
+      gallery: editing.gallery.filter((g) => g),
+    }
+    try {
+      const isUpdate = !!editing.id
+      const r = await fetch(isUpdate ? `/api/articles/${editing.id}` : '/api/articles', {
+        method: isUpdate ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+        body: JSON.stringify(body),
+      })
+      const d = await r.json()
+      if (r.ok) {
+        toast.success(isUpdate ? 'Articol actualizat!' : 'Articol publicat!')
+        setView('list')
+        loadArticles()
+      } else {
+        toast.error(d.error || 'Eroare la salvare')
+      }
+    } catch {
+      toast.error('Eroare')
+    }
+  }
+
+  const remove = async (id) => {
+    if (!confirm('Sigur ștergi acest articol?')) return
+    const r = await fetch(`/api/articles/${id}`, {
+      method: 'DELETE',
+      headers: { 'X-Admin-Token': token },
+    })
+    if (r.ok) {
+      toast.success('Articol șters')
+      loadArticles()
+    }
+  }
+
+  if (!token) {
+    return (
+      <div className="pt-32 pb-20 min-h-screen flex items-center justify-center bg-gradient-to-br from-cyan-50 via-white to-sky-50">
+        <Card className="w-full max-w-md p-8 shadow-xl">
+          <div className="text-center mb-6">
+            <div className="w-14 h-14 mx-auto bg-cyan-500 rounded-2xl flex items-center justify-center mb-4">
+              <Lock className="w-7 h-7 text-white" />
+            </div>
+            <h1 className="font-display text-2xl font-bold text-slate-900">Admin Panel</h1>
+            <p className="text-slate-500 text-sm mt-1">Acces administrator</p>
+          </div>
+          <form onSubmit={login} className="space-y-4">
+            <div>
+              <Label htmlFor="pwd">Parolă</Label>
+              <Input id="pwd" type="password" value={pwd} onChange={(e) => setPwd(e.target.value)} placeholder="Introdu parola" className="h-11 mt-1" autoFocus />
+            </div>
+            <Button type="submit" className="w-full bg-cyan-500 hover:bg-cyan-600 h-11">
+              Autentificare
+            </Button>
+          </form>
+          <p className="text-xs text-slate-400 text-center mt-4">Parola implicită: admin123 (configurabilă în .env)</p>
+        </Card>
+      </div>
+    )
+  }
+
+  return (
+    <div className="pt-24 pb-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="font-display text-3xl font-bold text-slate-900">Admin Dashboard</h1>
+          <p className="text-slate-500 mt-1">{articles.length} articole publicate</p>
+        </div>
+        <div className="flex gap-2">
+          {view === 'list' && (
+            <Button onClick={() => startEdit(null)} className="bg-cyan-500 hover:bg-cyan-600">
+              <Plus className="w-4 h-4 mr-2" />Articol nou
+            </Button>
+          )}
+          <Button variant="outline" onClick={logout}>
+            <LogOut className="w-4 h-4 mr-2" />Ieșire
+          </Button>
+        </div>
+      </div>
+
+      {view === 'list' && (
+        <div className="grid gap-3">
+          {articles.map((a) => (
+            <Card key={a.id} className="p-4 flex items-center gap-4 hover:border-cyan-300 transition-colors">
+              <img src={a.cover} alt={a.title} className="w-20 h-20 rounded-lg object-cover" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <Badge variant="secondary" className="bg-cyan-50 text-cyan-700">{a.continent}</Badge>
+                  <Badge variant="outline">{a.type}</Badge>
+                  {a.featured && <Badge className="bg-amber-500"><Star className="w-3 h-3 mr-1" />Recomandat</Badge>}
+                </div>
+                <h3 className="font-semibold text-slate-900 truncate">{a.title}</h3>
+                <p className="text-sm text-slate-500 truncate">{a.country} · /blog/{a.slug}</p>
+              </div>
+              <div className="flex gap-2 flex-shrink-0">
+                <Link href={`/blog/${a.slug}`} target="_blank">
+                  <Button variant="outline" size="icon"><Eye className="w-4 h-4" /></Button>
+                </Link>
+                <Button variant="outline" size="icon" onClick={() => startEdit(a)}><Edit className="w-4 h-4" /></Button>
+                <Button variant="outline" size="icon" onClick={() => remove(a.id)} className="text-red-600 hover:bg-red-50"><Trash2 className="w-4 h-4" /></Button>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {view === 'edit' && editing && (
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="font-display text-2xl font-bold">{editing.id ? 'Editare articol' : 'Articol nou'}</h2>
+            <Button variant="ghost" onClick={() => setView('list')}><X className="w-4 h-4" /></Button>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-4 mb-4">
+            <Field label="Titlu *"><Input value={editing.title} onChange={(e) => setEditing({ ...editing, title: e.target.value })} /></Field>
+            <Field label="Slug (URL) *"><Input value={editing.slug} onChange={(e) => setEditing({ ...editing, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') })} /></Field>
+          </div>
+
+          <Field label="Rezumat"><Textarea value={editing.excerpt} onChange={(e) => setEditing({ ...editing, excerpt: e.target.value })} rows={2} /></Field>
+
+          <Field label="URL imagine principală"><Input value={editing.cover} onChange={(e) => setEditing({ ...editing, cover: e.target.value })} placeholder="https://..." /></Field>
+
+          <div className="grid md:grid-cols-4 gap-4">
+            <Field label="Continent">
+              <select className="w-full h-10 px-3 rounded-md border border-slate-200" value={editing.continent} onChange={(e) => setEditing({ ...editing, continent: e.target.value })}>
+                <option>Europa</option><option>Asia</option><option>America</option><option>Africa</option><option>Oceania</option>
+              </select>
+            </Field>
+            <Field label="Țară"><Input value={editing.country} onChange={(e) => setEditing({ ...editing, country: e.target.value })} /></Field>
+            <Field label="Oraș"><Input value={editing.city} onChange={(e) => setEditing({ ...editing, city: e.target.value })} /></Field>
+            <Field label="Tip călătorie">
+              <select className="w-full h-10 px-3 rounded-md border border-slate-200" value={editing.type} onChange={(e) => setEditing({ ...editing, type: e.target.value })}>
+                <option>City Break</option><option>Aventură</option><option>Romantic</option><option>Cultural</option><option>Plajă</option><option>Backpacking</option>
+              </select>
+            </Field>
+          </div>
+
+          <div className="grid md:grid-cols-4 gap-4">
+            <Field label="Tags (separat prin virgulă)"><Input value={editing.tags} onChange={(e) => setEditing({ ...editing, tags: e.target.value })} placeholder="travel, europa, city" /></Field>
+            <Field label="Timp citire (min)"><Input type="number" value={editing.readingMinutes} onChange={(e) => setEditing({ ...editing, readingMinutes: e.target.value })} /></Field>
+            <Field label="Data publicare"><Input type="date" value={editing.publishedAt} onChange={(e) => setEditing({ ...editing, publishedAt: e.target.value })} /></Field>
+            <Field label="Autor"><Input value={editing.author} onChange={(e) => setEditing({ ...editing, author: e.target.value })} /></Field>
+          </div>
+
+          <label className="flex items-center gap-2 mt-2 mb-6">
+            <input type="checkbox" checked={editing.featured} onChange={(e) => setEditing({ ...editing, featured: e.target.checked })} />
+            <span className="text-sm">Marcă ca „Recomandat” (apare pe homepage)</span>
+          </label>
+
+          <Field label="Introducere (conținut principal, paragrafe separate prin rând gol)">
+            <Textarea value={editing.intro} onChange={(e) => setEditing({ ...editing, intro: e.target.value })} rows={6} />
+          </Field>
+
+          <div className="grid md:grid-cols-2 gap-4">
+            <Field label="Când să vizitezi"><Textarea value={editing.whenToVisit} onChange={(e) => setEditing({ ...editing, whenToVisit: e.target.value })} rows={3} /></Field>
+            <Field label="Buget estimativ"><Textarea value={editing.budget} onChange={(e) => setEditing({ ...editing, budget: e.target.value })} rows={3} /></Field>
+            <Field label="Transport"><Textarea value={editing.transport} onChange={(e) => setEditing({ ...editing, transport: e.target.value })} rows={3} /></Field>
+            <Field label="Cazare recomandată"><Textarea value={editing.accommodation} onChange={(e) => setEditing({ ...editing, accommodation: e.target.value })} rows={3} /></Field>
+          </div>
+
+          <ArrayField title="Obiective turistice" items={editing.attractions}
+            onChange={(v) => setEditing({ ...editing, attractions: v })}
+            template={{ name: '', description: '' }}
+            render={(item, set) => (
+              <div className="grid md:grid-cols-3 gap-2">
+                <Input placeholder="Nume obiectiv" value={item.name} onChange={(e) => set({ ...item, name: e.target.value })} />
+                <Textarea placeholder="Descriere" value={item.description} onChange={(e) => set({ ...item, description: e.target.value })} rows={1} className="md:col-span-2" />
+              </div>
+            )} />
+
+          <ArrayField title="Restaurante" items={editing.restaurants}
+            onChange={(v) => setEditing({ ...editing, restaurants: v })}
+            template={{ name: '', description: '' }}
+            render={(item, set) => (
+              <div className="grid md:grid-cols-3 gap-2">
+                <Input placeholder="Nume restaurant" value={item.name} onChange={(e) => set({ ...item, name: e.target.value })} />
+                <Textarea placeholder="Descriere" value={item.description} onChange={(e) => set({ ...item, description: e.target.value })} rows={1} className="md:col-span-2" />
+              </div>
+            )} />
+
+          <ArrayField title="Sfaturi utile" items={editing.tips}
+            onChange={(v) => setEditing({ ...editing, tips: v })}
+            template=""
+            render={(item, set) => (
+              <Input placeholder="Un sfat util" value={item} onChange={(e) => set(e.target.value)} />
+            )} />
+
+          <ArrayField title="Galerie (URL-uri imagini)" items={editing.gallery}
+            onChange={(v) => setEditing({ ...editing, gallery: v })}
+            template=""
+            render={(item, set) => (
+              <Input placeholder="https://..." value={item} onChange={(e) => set(e.target.value)} />
+            )} />
+
+          <div className="flex gap-3 mt-8 sticky bottom-4 bg-white p-3 rounded-xl border border-slate-200 shadow-lg">
+            <Button onClick={save} className="bg-cyan-500 hover:bg-cyan-600 flex-1"><Save className="w-4 h-4 mr-2" />Salvează</Button>
+            <Button variant="outline" onClick={() => setView('list')}>Anulează</Button>
+          </div>
+        </Card>
+      )}
+    </div>
+  )
+}
+
+function Field({ label, children }) {
+  return (
+    <div className="mb-4">
+      <Label className="mb-1.5 block text-sm">{label}</Label>
+      {children}
+    </div>
+  )
+}
+
+function ArrayField({ title, items, onChange, template, render }) {
+  return (
+    <div className="mb-6 bg-slate-50 rounded-xl p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="font-semibold text-slate-900">{title}</h4>
+        <Button size="sm" variant="outline" onClick={() => onChange([...items, typeof template === 'string' ? '' : { ...template }])}>
+          <Plus className="w-3 h-3 mr-1" />Adaugă
+        </Button>
+      </div>
+      <div className="space-y-2">
+        {items.map((item, i) => (
+          <div key={i} className="flex gap-2 items-start">
+            <div className="flex-1">{render(item, (newVal) => {
+              const copy = [...items]
+              copy[i] = newVal
+              onChange(copy)
+            })}</div>
+            <Button size="icon" variant="ghost" onClick={() => onChange(items.filter((_, k) => k !== i))} className="text-red-500">
+              <Trash2 className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
