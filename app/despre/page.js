@@ -20,7 +20,7 @@ export default function Despre() {
               că magia călătoriei nu stă în destinație, ci în drum.
             </p>
             <p className="text-lg text-slate-700 leading-relaxed mb-8">
-              Pe Următoarea Destinație public ghiduri testate personal, recomandări reale și sfaturi care
+              Pe Destinația Următoare public ghiduri testate personal, recomandări reale și sfaturi care
               ți-au schimbat realmente călătoriile. Fără sponsorizări ascunse, fără clișee.
             </p>
             <div className="grid grid-cols-3 gap-4">

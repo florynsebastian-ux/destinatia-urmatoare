@@ -70,7 +70,7 @@ async function handleRoute(request, { params }) {
     const db = await connectToMongo()
 
     if (route === '/' && method === 'GET') {
-      return handleCORS(NextResponse.json({ message: 'Următoarea Destinație API up' }))
+      return handleCORS(NextResponse.json({ message: 'Destinația Următoare API up' }))
     }
 
     // ARTICLES LIST: GET /api/articles?continent=&country=&type=&search=&page=&limit=

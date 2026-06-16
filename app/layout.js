@@ -7,14 +7,14 @@ import SiteFooter from '@/components/site-footer'
 
 export const metadata = {
   title: {
-    default: 'Următoarea Destinație · Ghiduri de călătorie și inspirație pentru aventura ta',
-    template: '%s · Următoarea Destinație',
+    default: 'Destinația Următoare · Ghiduri de călătorie și inspirație pentru aventura ta',
+    template: '%s · Destinația Următoare',
   },
   description:
     'Descoperă ghiduri de călătorie detaliate, itinerarii, sfaturi de travel și destinații inspiraționale pentru următoarea ta aventură.',
-  keywords: ['travel blog', 'ghiduri turistice', 'destinatii', 'itinerarii', 'sfaturi calatorie', 'urmatoarea destinatie'],
+  keywords: ['travel blog', 'ghiduri turistice', 'destinatii', 'itinerarii', 'sfaturi calatorie', 'destinatia urmatoare'],
   openGraph: {
-    title: 'Următoarea Destinație · Ghiduri de călătorie',
+    title: 'Destinația Următoare · Ghiduri de călătorie',
     description: 'Inspirație, sfaturi și ghiduri detaliate pentru călătoriile tale.',
     type: 'website',
     locale: 'ro_RO',

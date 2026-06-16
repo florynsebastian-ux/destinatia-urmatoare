@@ -11,7 +11,7 @@ export default function SiteFooter() {
               <div className="w-10 h-10 rounded-full bg-cyan-500 flex items-center justify-center">
                 <Plane className="w-5 h-5 text-white" strokeWidth={2.5} />
               </div>
-              <span className="font-display text-2xl font-bold text-white">Următoarea Destinație</span>
+              <span className="font-display text-2xl font-bold text-white">Destinația Următoare</span>
             </Link>
             <p className="text-slate-400 max-w-md leading-relaxed">
               Inspirație, ghiduri detaliate și itinerarii pentru călătorii care vor să vadă lumea
@@ -48,10 +48,10 @@ export default function SiteFooter() {
         </div>
 
         <div className="border-t border-slate-800 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-slate-500">
-          <p>© {new Date().getFullYear()} Următoarea Destinație. Toate drepturile rezervate.</p>
+          <p>© {new Date().getFullYear()} Destinația Următoare. Toate drepturile rezervate.</p>
           <div className="flex items-center gap-2">
             <Mail className="w-4 h-4" />
-            <a href="mailto:contact@urmatoareadestinatie.ro" className="hover:text-cyan-400">contact@urmatoareadestinatie.ro</a>
+            <a href="mailto:contact@destinatiaurmatoare.eu" className="hover:text-cyan-400">contact@destinatiaurmatoare.eu</a>
           </div>
         </div>
       </div>

@@ -48,7 +48,7 @@ export default function SiteHeader() {
             <span className={`font-display text-xl sm:text-2xl font-bold tracking-tight whitespace-nowrap ${
               transparent ? 'text-white' : 'text-slate-900'
             }`}>
-              Următoarea Destinație
+              Destinația Următoare
             </span>
           </Link>
 
