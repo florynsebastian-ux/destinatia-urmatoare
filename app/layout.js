@@ -1,4 +1,5 @@
 import './globals.css'
+import Script from 'next/script'
 import { Providers } from './providers'
 import { Toaster } from '@/components/ui/sonner'
 import SiteHeader from '@/components/site-header'
@@ -40,6 +41,24 @@ export default function RootLayout({ children }) {
           <SiteFooter />
           <Toaster richColors position="top-right" />
         </Providers>
+
+        {/* Google Analytics 4 */}
+        {process.env.NEXT_PUBLIC_GA_ID && (
+          <>
+            <Script
+              src={`https://www.googletagmanager.com/gtag/js?id=${process.env.NEXT_PUBLIC_GA_ID}`}
+              strategy="afterInteractive"
+            />
+            <Script id="ga-init" strategy="afterInteractive">
+              {`
+                window.dataLayer = window.dataLayer || [];
+                function gtag(){dataLayer.push(arguments);}
+                gtag('js', new Date());
+                gtag('config', '${process.env.NEXT_PUBLIC_GA_ID}', { page_path: window.location.pathname });
+              `}
+            </Script>
+          </>
+        )}
       </body>
     </html>
   )
