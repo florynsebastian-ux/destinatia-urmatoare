@@ -48,7 +48,16 @@ export default function SiteFooter() {
         </div>
 
         <div className="border-t border-slate-800 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-slate-500">
-          <p>© {new Date().getFullYear()} Destinația Următoare. Toate drepturile rezervate.</p>
+          <div className="flex flex-col md:flex-row items-center gap-3 md:gap-5">
+            <p>© {new Date().getFullYear()} Destinația Următoare. Toate drepturile rezervate.</p>
+            <div className="flex flex-wrap items-center gap-3 text-xs">
+              <Link href="/politica-confidentialitate" className="hover:text-cyan-400">Confidențialitate</Link>
+              <span>·</span>
+              <Link href="/termeni-si-conditii" className="hover:text-cyan-400">Termeni</Link>
+              <span>·</span>
+              <Link href="/politica-cookies" className="hover:text-cyan-400">Cookies</Link>
+            </div>
+          </div>
           <div className="flex items-center gap-2">
             <Mail className="w-4 h-4" />
             <a href="mailto:contact@destinatiaurmatoare.eu" className="hover:text-cyan-400">contact@destinatiaurmatoare.eu</a>

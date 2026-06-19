@@ -4,6 +4,7 @@ import { Providers } from './providers'
 import { Toaster } from '@/components/ui/sonner'
 import SiteHeader from '@/components/site-header'
 import SiteFooter from '@/components/site-footer'
+import CookieBanner from '@/components/cookie-banner'
 
 export const metadata = {
   title: {
@@ -46,6 +47,7 @@ export default function RootLayout({ children }) {
           <main className="min-h-[60vh]">{children}</main>
           <SiteFooter />
           <Toaster richColors position="top-right" />
+          <CookieBanner />
         </Providers>
 
         {/* Google Analytics 4 */}
