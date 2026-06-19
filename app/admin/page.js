@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Lock, LogOut, Plus, Edit, Trash2, Save, X, Eye, Star } from 'lucide-react'
+import { Lock, LogOut, Plus, Edit, Trash2, Save, X, Eye, Star, Sparkles, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -28,7 +28,9 @@ export default function AdminPage() {
   const [pwd, setPwd] = useState('')
   const [articles, setArticles] = useState([])
   const [editing, setEditing] = useState(null)
-  const [view, setView] = useState('list') // list | edit
+  const [view, setView] = useState('list') // list | edit | ai
+  const [aiForm, setAiForm] = useState({ city: '', country: '', type: 'City Break', duration: '5 zile', budget: 'mediu' })
+  const [aiLoading, setAiLoading] = useState(false)
 
   useEffect(() => {
     const t = typeof window !== 'undefined' ? localStorage.getItem('ud_admin_token') : null
@@ -133,6 +135,41 @@ export default function AdminPage() {
     }
   }
 
+  const generateWithAI = async () => {
+    if (!aiForm.city) {
+      toast.error('Introdu numele orașului')
+      return
+    }
+    setAiLoading(true)
+    try {
+      const r = await fetch('/api/ai/generate-article', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+        body: JSON.stringify(aiForm),
+      })
+      const d = await r.json()
+      if (r.ok && d.article) {
+        toast.success('Articol generat! Verifică și salvează.')
+        // Open in edit view with AI-generated content
+        setEditing({
+          ...d.article,
+          tags: Array.isArray(d.article.tags) ? d.article.tags.join(', ') : '',
+          attractions: d.article.attractions || [{ name: '', description: '' }],
+          restaurants: d.article.restaurants || [{ name: '', description: '' }],
+          tips: d.article.tips || [''],
+          gallery: d.article.gallery || [''],
+        })
+        setView('edit')
+      } else {
+        toast.error(d.error || 'Eroare la generare')
+      }
+    } catch (e) {
+      toast.error('Eroare de rețea')
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
   if (!token) {
     return (
       <div className="pt-32 pb-20 min-h-screen flex items-center justify-center bg-gradient-to-br from-cyan-50 via-white to-sky-50">
@@ -168,9 +205,14 @@ export default function AdminPage() {
         </div>
         <div className="flex gap-2">
           {view === 'list' && (
-            <Button onClick={() => startEdit(null)} className="bg-cyan-500 hover:bg-cyan-600">
-              <Plus className="w-4 h-4 mr-2" />Articol nou
-            </Button>
+            <>
+              <Button onClick={() => setView('ai')} className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white">
+                <Sparkles className="w-4 h-4 mr-2" />Generează cu AI
+              </Button>
+              <Button onClick={() => startEdit(null)} className="bg-cyan-500 hover:bg-cyan-600">
+                <Plus className="w-4 h-4 mr-2" />Articol nou
+              </Button>
+            </>
           )}
           <Button variant="outline" onClick={logout}>
             <LogOut className="w-4 h-4 mr-2" />Ieșire
@@ -202,6 +244,98 @@ export default function AdminPage() {
             </Card>
           ))}
         </div>
+      )}
+
+      {view === 'ai' && (
+        <Card className="p-8 max-w-2xl mx-auto bg-gradient-to-br from-purple-50 via-white to-pink-50 border-purple-200">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="font-display text-2xl font-bold flex items-center gap-2">
+                <Sparkles className="w-6 h-6 text-purple-500" />
+                Generator AI de articole
+              </h2>
+              <p className="text-slate-600 text-sm mt-1">Spune-i AI-ului ce destinație vrei și el îți face întreg articolul în ~45 secunde</p>
+            </div>
+            <Button variant="ghost" onClick={() => setView('list')} disabled={aiLoading}><X className="w-4 h-4" /></Button>
+          </div>
+
+          <div className="space-y-4">
+            <Field label="🌍 Oraș / Destinație *">
+              <Input
+                value={aiForm.city}
+                onChange={(e) => setAiForm({ ...aiForm, city: e.target.value })}
+                placeholder="Ex: Lisabona, Praga, Brașov, Bali, Bangkok..."
+                className="h-11 text-base"
+                autoFocus
+                disabled={aiLoading}
+              />
+            </Field>
+
+            <Field label="🗺️ Țara (opțional, AI o detectează automat)">
+              <Input
+                value={aiForm.country}
+                onChange={(e) => setAiForm({ ...aiForm, country: e.target.value })}
+                placeholder="Ex: Portugalia, Cehia, România..."
+                className="h-11"
+                disabled={aiLoading}
+              />
+            </Field>
+
+            <div className="grid md:grid-cols-3 gap-4">
+              <Field label="🎒 Tip călătorie">
+                <select className="w-full h-11 px-3 rounded-md border border-slate-200 bg-white" value={aiForm.type} onChange={(e) => setAiForm({ ...aiForm, type: e.target.value })} disabled={aiLoading}>
+                  <option>City Break</option><option>Aventură</option><option>Romantic</option><option>Cultural</option><option>Plajă</option><option>Backpacking</option>
+                </select>
+              </Field>
+
+              <Field label="⏰ Durată">
+                <select className="w-full h-11 px-3 rounded-md border border-slate-200 bg-white" value={aiForm.duration} onChange={(e) => setAiForm({ ...aiForm, duration: e.target.value })} disabled={aiLoading}>
+                  <option>2 zile</option><option>3 zile</option><option>4 zile</option><option>5 zile</option><option>7 zile</option><option>10 zile</option><option>14 zile</option>
+                </select>
+              </Field>
+
+              <Field label="💰 Buget">
+                <select className="w-full h-11 px-3 rounded-md border border-slate-200 bg-white" value={aiForm.budget} onChange={(e) => setAiForm({ ...aiForm, budget: e.target.value })} disabled={aiLoading}>
+                  <option value="mic">Mic (backpacker)</option>
+                  <option value="mediu">Mediu (standard)</option>
+                  <option value="mare">Mare (lux)</option>
+                </select>
+              </Field>
+            </div>
+
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 text-sm text-purple-900">
+              <p className="font-semibold mb-1">✨ AI va genera automat:</p>
+              <ul className="grid grid-cols-2 gap-1 text-xs">
+                <li>✅ Titlu SEO + slug URL</li>
+                <li>✅ Rezumat captivant</li>
+                <li>✅ Introducere narativă</li>
+                <li>✅ Când să vizitezi</li>
+                <li>✅ Buget detaliat în EUR</li>
+                <li>✅ Transport (aeroport + oraș)</li>
+                <li>✅ Cazare cu cartiere</li>
+                <li>✅ 5-7 Obiective turistice</li>
+                <li>✅ 3-5 Restaurante</li>
+                <li>✅ 5-7 Sfaturi practice</li>
+                <li>✅ Tags SEO</li>
+                <li>✅ Galerie imagini</li>
+              </ul>
+              <p className="mt-2 text-xs italic">După generare poți edita orice câmp înainte de publicare.</p>
+            </div>
+
+            <Button
+              onClick={generateWithAI}
+              disabled={aiLoading || !aiForm.city}
+              size="lg"
+              className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white h-12 text-base"
+            >
+              {aiLoading ? (
+                <><Loader2 className="w-5 h-5 mr-2 animate-spin" />AI scrie articolul... (~45 sec)</>
+              ) : (
+                <><Sparkles className="w-5 h-5 mr-2" />Generează articolul</>
+              )}
+            </Button>
+          </div>
+        </Card>
       )}
 
       {view === 'edit' && editing && (

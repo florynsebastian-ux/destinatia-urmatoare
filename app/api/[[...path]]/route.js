@@ -1,7 +1,11 @@
 import { MongoClient } from 'mongodb'
 import { v4 as uuidv4 } from 'uuid'
 import { NextResponse } from 'next/server'
+import OpenAI from 'openai'
 import { DEMO_ARTICLES } from '@/lib/seed-data'
+
+// Vercel: allow up to 60s for LLM generation
+export const maxDuration = 60
 
 let client
 let db
@@ -248,6 +252,141 @@ async function handleRoute(request, { params }) {
         createdAt: new Date(),
       }
       await db.collection('comments').insertOne(doc)
+      return handleCORS(NextResponse.json(clean(doc)))
+    }
+
+    // AI ARTICLE GENERATOR: POST /api/ai/generate-article
+    if (route === '/ai/generate-article' && method === 'POST') {
+      if (!isAuth(request)) return handleCORS(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
+      const body = await request.json()
+      const { city, country, type = 'City Break', duration = '5 zile', budget = 'mediu' } = body
+      if (!city) return handleCORS(NextResponse.json({ error: 'city este obligatoriu' }, { status: 400 }))
+
+      const openai = new OpenAI({
+        apiKey: process.env.EMERGENT_LLM_KEY,
+        baseURL: 'https://integrations.emergentagent.com/llm',
+      })
+
+      const userPrompt = `Generează un ghid turistic detaliat și profesional pentru:
+- Oraș: ${city}
+- Țară: ${country || 'detectează automat'}
+- Tip călătorie: ${type}
+- Durată: ${duration}
+- Buget vizat: ${budget}
+
+Scrie complet în limba română cu diacritice, cu detalii concrete (prețuri 2025 în EUR, nume reale de restaurante/cartiere/hoteluri, ore de funcționare, sfaturi practice). Tonul: prietenos, informativ, ca un prieten care a fost acolo.
+
+IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau după), exact cu structura cerută în schema function. NU include în slug niciun caracter special, doar litere mici fără diacritice și cratimă.`
+
+      const completion = await openai.chat.completions.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 4000,
+        temperature: 0.7,
+        messages: [
+          { role: 'system', content: 'Ești un expert în turism și travel blogger profesionist român cu experiență de peste 10 ani. Scrii ghiduri detaliate, practice, cu informații verificate. Tonul tău este prietenos, narativ. Scrii EXCLUSIV în limba română corectă cu diacritice.' },
+          { role: 'user', content: userPrompt },
+        ],
+        tools: [{
+          type: 'function',
+          function: {
+            name: 'create_travel_guide',
+            description: 'Creează un ghid turistic complet și structurat',
+            parameters: {
+              type: 'object',
+              properties: {
+                title: { type: 'string', description: 'Titlu atractiv SEO-friendly, ex: "Lisabona în 4 zile: ghid complet 2025"' },
+                slug: { type: 'string', description: 'URL slug lowercase cu cratimă, fără diacritice, ex: "lisabona-ghid-4-zile"' },
+                excerpt: { type: 'string', description: 'Rezumat captivant de 2 propoziții (max 220 caractere)' },
+                continent: { type: 'string', enum: ['Europa', 'Asia', 'America', 'Africa', 'Oceania'] },
+                country: { type: 'string' },
+                city: { type: 'string' },
+                intro: { type: 'string', description: 'Introducere narativă de 2-3 paragrafe separate prin \\n\\n' },
+                whenToVisit: { type: 'string', description: 'Recomandare detaliată cu luni, vreme, evenimente (4-6 propoziții)' },
+                budget: { type: 'string', description: 'Buget concret în EUR pentru durata aleasă, 2 persoane, detaliat pe categorii' },
+                transport: { type: 'string', description: 'Aeroport, transfer în oraș, transport public' },
+                accommodation: { type: 'string', description: '2-3 cartiere + 2-3 hoteluri specifice cu preț' },
+                attractions: {
+                  type: 'array',
+                  description: '5-7 obiective turistice',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      name: { type: 'string' },
+                      description: { type: 'string', description: 'Descriere scurtă cu sfat practic (1-2 propoziții)' },
+                    },
+                    required: ['name', 'description'],
+                  },
+                },
+                restaurants: {
+                  type: 'array',
+                  description: '3-5 restaurante autentice',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      name: { type: 'string' },
+                      description: { type: 'string' },
+                    },
+                    required: ['name', 'description'],
+                  },
+                },
+                tips: { type: 'array', description: '5-7 sfaturi practice', items: { type: 'string' } },
+                tags: { type: 'array', description: '4-6 tag-uri SEO', items: { type: 'string' } },
+                readingMinutes: { type: 'number' },
+                coverImageQuery: { type: 'string', description: 'Cuvinte cheie ENGLEZE pentru cover image' },
+                galleryImageQueries: { type: 'array', description: '4 sintagme ENGLEZE pentru galerie', items: { type: 'string' } },
+              },
+              required: ['title', 'slug', 'excerpt', 'continent', 'country', 'city', 'intro', 'whenToVisit', 'budget', 'transport', 'accommodation', 'attractions', 'restaurants', 'tips', 'tags', 'readingMinutes', 'coverImageQuery', 'galleryImageQueries'],
+            },
+          },
+        }],
+        tool_choice: { type: 'function', function: { name: 'create_travel_guide' } },
+      })
+
+      const toolCall = completion.choices?.[0]?.message?.tool_calls?.[0]
+      if (!toolCall || !toolCall.function?.arguments) {
+        return handleCORS(NextResponse.json({ error: 'AI nu a returnat structura corectă', raw: completion }, { status: 500 }))
+      }
+      const data = JSON.parse(toolCall.function.arguments)
+
+      // Image URLs - using picsum placeholder (user can swap with real URLs in admin)
+      const seedFor = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 30)
+      data.cover = `https://picsum.photos/seed/${seedFor(data.coverImageQuery || data.city)}/1600/1000`
+      data.gallery = (data.galleryImageQueries || []).slice(0, 4).map(
+        (q, i) => `https://picsum.photos/seed/${seedFor(q)}-${i}/1200/800`
+      )
+
+      // Default fields
+      data.type = type
+      data.featured = false
+      data.author = 'Andrei Munteanu'
+      data.publishedAt = new Date().toISOString().slice(0, 10)
+
+      return handleCORS(NextResponse.json({ article: data }))
+    }
+
+    // AI SAVE: POST /api/ai/save-article
+    if (route === '/ai/save-article' && method === 'POST') {
+      if (!isAuth(request)) return handleCORS(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
+      const body = await request.json()
+      if (!body.title || !body.slug) {
+        return handleCORS(NextResponse.json({ error: 'title \u0219i slug obligatorii' }, { status: 400 }))
+      }
+      // ensure unique slug
+      let slug = body.slug
+      let counter = 1
+      while (await db.collection('articles').findOne({ slug })) {
+        slug = `${body.slug}-${counter++}`
+      }
+      const doc = {
+        id: uuidv4(),
+        ...body,
+        slug,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+      delete doc.coverImageQuery
+      delete doc.galleryImageQueries
+      await db.collection('articles').insertOne(doc)
       return handleCORS(NextResponse.json(clean(doc)))
     }
 
