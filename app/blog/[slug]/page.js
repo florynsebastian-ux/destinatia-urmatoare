@@ -5,6 +5,7 @@ import { Clock, MapPin, Calendar, User, ArrowRight, Wallet, Plane, Bed, Camera, 
 import { Badge } from '@/components/ui/badge'
 import NewsletterCTA from '@/components/newsletter-cta'
 import ArticleClient from './article-client'
+import WeatherWidget from '@/components/weather-widget'
 
 async function getArticle(slug) {
   try {
@@ -117,6 +118,7 @@ export default async function ArticlePage({ params }) {
             {a.intro && (
               <section id="introducere">
                 {a.intro.split('\n\n').map((p, i) => <p key={i}>{p}</p>)}
+                <WeatherWidget city={a.city} country={a.country} />
               </section>
             )}
 

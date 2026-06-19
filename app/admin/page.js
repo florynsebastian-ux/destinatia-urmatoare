@@ -31,6 +31,9 @@ export default function AdminPage() {
   const [view, setView] = useState('list') // list | edit | ai
   const [aiForm, setAiForm] = useState({ city: '', country: '', type: 'City Break', duration: '5 zile', budget: 'mediu' })
   const [aiLoading, setAiLoading] = useState(false)
+  const [bulkCities, setBulkCities] = useState('')
+  const [bulkLoading, setBulkLoading] = useState(false)
+  const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0, results: [] })
 
   useEffect(() => {
     const t = typeof window !== 'undefined' ? localStorage.getItem('ud_admin_token') : null
@@ -150,7 +153,6 @@ export default function AdminPage() {
       const d = await r.json()
       if (r.ok && d.article) {
         toast.success('Articol generat! Verifică și salvează.')
-        // Open in edit view with AI-generated content
         setEditing({
           ...d.article,
           tags: Array.isArray(d.article.tags) ? d.article.tags.join(', ') : '',
@@ -168,6 +170,71 @@ export default function AdminPage() {
     } finally {
       setAiLoading(false)
     }
+  }
+
+  const bulkGenerateAndSave = async () => {
+    const lines = bulkCities.split('\n').map(l => l.trim()).filter(Boolean)
+    if (lines.length === 0) {
+      toast.error('Adaugă cel puțin un oraș')
+      return
+    }
+    if (lines.length > 15) {
+      toast.error('Maxim 15 orașe per batch')
+      return
+    }
+    setBulkLoading(true)
+    setBulkProgress({ current: 0, total: lines.length, results: [] })
+
+    const results = []
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+      // Parse: "City, Country" or just "City"
+      const parts = line.split(',').map(p => p.trim())
+      const city = parts[0]
+      const country = parts[1] || ''
+
+      setBulkProgress({ current: i + 1, total: lines.length, results })
+      try {
+        const r = await fetch('/api/ai/generate-article', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+          body: JSON.stringify({ city, country, type: 'City Break', duration: '5 zile', budget: 'mediu' }),
+        })
+        const d = await r.json()
+        if (r.ok && d.article) {
+          // Auto-save the generated article
+          const saveBody = {
+            ...d.article,
+            tags: Array.isArray(d.article.tags) ? d.article.tags : [],
+            attractions: d.article.attractions || [],
+            restaurants: d.article.restaurants || [],
+            tips: d.article.tips || [],
+            gallery: d.article.gallery || [],
+          }
+          delete saveBody.coverImageQuery
+          delete saveBody.galleryImageQueries
+          const saveR = await fetch('/api/ai/save-article', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+            body: JSON.stringify(saveBody),
+          })
+          if (saveR.ok) {
+            results.push({ city, status: 'success', title: d.article.title, slug: d.article.slug })
+          } else {
+            results.push({ city, status: 'error', error: 'Eroare salvare' })
+          }
+        } else {
+          results.push({ city, status: 'error', error: d.error || 'Eroare AI' })
+        }
+      } catch (e) {
+        results.push({ city, status: 'error', error: 'Eroare rețea' })
+      }
+    }
+
+    setBulkProgress({ current: lines.length, total: lines.length, results })
+    setBulkLoading(false)
+    toast.success(`Gata! ${results.filter(r => r.status === 'success').length}/${results.length} articole publicate`)
+    loadArticles()
   }
 
   if (!token) {
@@ -203,9 +270,12 @@ export default function AdminPage() {
           <h1 className="font-display text-3xl font-bold text-slate-900">Admin Dashboard</h1>
           <p className="text-slate-500 mt-1">{articles.length} articole publicate</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           {view === 'list' && (
             <>
+              <Button onClick={() => setView('bulk')} className="bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white">
+                <Sparkles className="w-4 h-4 mr-2" />Bulk AI (5+ articole)
+              </Button>
               <Button onClick={() => setView('ai')} className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white">
                 <Sparkles className="w-4 h-4 mr-2" />Generează cu AI
               </Button>
@@ -244,6 +314,92 @@ export default function AdminPage() {
             </Card>
           ))}
         </div>
+      )}
+
+      {view === 'bulk' && (
+        <Card className="p-8 max-w-3xl mx-auto bg-gradient-to-br from-indigo-50 via-white to-purple-50 border-indigo-200">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="font-display text-2xl font-bold flex items-center gap-2">
+                <Sparkles className="w-6 h-6 text-indigo-500" />
+                Bulk AI Generator
+              </h2>
+              <p className="text-slate-600 text-sm mt-1">Generează 5-15 articole în paralel. Toate se salvează automat în site.</p>
+            </div>
+            <Button variant="ghost" onClick={() => { setView('list'); setBulkProgress({ current: 0, total: 0, results: [] }) }} disabled={bulkLoading}><X className="w-4 h-4" /></Button>
+          </div>
+
+          {!bulkLoading && bulkProgress.results.length === 0 && (
+            <>
+              <Field label="🌍 Listă orașe (unul per linie). Format: 'Oraș' sau 'Oraș, Țară'">
+                <Textarea
+                  value={bulkCities}
+                  onChange={(e) => setBulkCities(e.target.value)}
+                  placeholder={`Praga, Cehia\nViena, Austria\nMadrid, Spania\nAmsterdam\nKrakow, Polonia`}
+                  rows={10}
+                  className="font-mono text-sm"
+                />
+              </Field>
+              <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 text-sm text-indigo-900 mb-4">
+                <p className="font-semibold mb-2">⏱️ Estimări:</p>
+                <ul className="text-xs space-y-1">
+                  <li>• Fiecare articol durează ~45-60 secunde</li>
+                  <li>• 5 articole = ~5 minute</li>
+                  <li>• 10 articole = ~10 minute</li>
+                  <li>• Articolele se salvează automat — nu trebuie să apeși Save</li>
+                  <li>• Tip călătorie: City Break, Durată: 5 zile, Buget: Mediu (default)</li>
+                </ul>
+              </div>
+              <Button
+                onClick={bulkGenerateAndSave}
+                size="lg"
+                disabled={!bulkCities.trim()}
+                className="w-full bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white h-12"
+              >
+                <Sparkles className="w-5 h-5 mr-2" />
+                Generează și publică toate articolele
+              </Button>
+            </>
+          )}
+
+          {(bulkLoading || bulkProgress.results.length > 0) && (
+            <div>
+              <div className="mb-4 flex items-center justify-between">
+                <span className="text-sm font-semibold text-slate-700">
+                  {bulkLoading ? `Procesează ${bulkProgress.current}/${bulkProgress.total}...` : `Gata! ${bulkProgress.results.filter(r => r.status === 'success').length}/${bulkProgress.total} reușite`}
+                </span>
+                {bulkLoading && <Loader2 className="w-5 h-5 animate-spin text-indigo-500" />}
+              </div>
+              <div className="w-full bg-slate-100 rounded-full h-2 mb-6 overflow-hidden">
+                <div
+                  className="bg-gradient-to-r from-indigo-500 to-purple-500 h-2 transition-all duration-500"
+                  style={{ width: `${(bulkProgress.current / bulkProgress.total) * 100}%` }}
+                />
+              </div>
+
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {bulkProgress.results.map((r, i) => (
+                  <div key={i} className={`p-3 rounded-lg border ${r.status === 'success' ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">{r.status === 'success' ? '✅' : '❌'}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-sm truncate">{r.title || r.city}</div>
+                        {r.slug && <div className="text-xs text-slate-500">/blog/{r.slug}</div>}
+                        {r.error && <div className="text-xs text-red-600">{r.error}</div>}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {!bulkLoading && (
+                <Button onClick={() => { setBulkProgress({ current: 0, total: 0, results: [] }); setBulkCities(''); setView('list') }} className="mt-6 w-full">
+                  Înapoi la lista articole
+                </Button>
+              )}
+            </div>
+          )}
+        </Card>
       )}
 
       {view === 'ai' && (

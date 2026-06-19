@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { Menu, X, Plane, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import SmartSearch from '@/components/smart-search'
 
 const NAV = [
   { href: '/', label: 'Acasă' },
@@ -76,6 +77,7 @@ export default function SiteHeader() {
           </nav>
 
           <div className="hidden lg:flex items-center gap-2">
+            {!transparent && <SmartSearch />}
             <Link href="/blog">
               <Button
                 size="sm"

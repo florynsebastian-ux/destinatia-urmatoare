@@ -94,6 +94,12 @@ async function handleRoute(request, { params }) {
       if (country) filter.country = country
       if (type) filter.type = type
       if (featured === 'true') filter.featured = true
+      // Hide scheduled (future-dated) articles from public listing
+      // Admin endpoint passes ?includeScheduled=true to see them
+      const includeScheduled = url.searchParams.get('includeScheduled') === 'true'
+      if (!includeScheduled) {
+        filter.publishedAt = { $lte: new Date().toISOString().slice(0, 10) }
+      }
       if (search) {
         filter.$or = [
           { title: { $regex: search, $options: 'i' } },
