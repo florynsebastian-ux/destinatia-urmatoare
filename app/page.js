@@ -34,7 +34,7 @@ export default async function HomePage() {
   const featured = await getArticles({ featured: 'true', limit: '3' })
   const popular = await getArticles({ limit: '6' })
 
-  const base = process.env.NEXT_PUBLIC_BASE_URL || 'https://destinatia-urmatoare.eu'
+  const base = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.destinatiaurmatoare.eu'
 
   // ItemList schema for featured articles — Google may show them as carousel in SERP
   const itemListSchema = (featured.items || []).length > 0 ? {

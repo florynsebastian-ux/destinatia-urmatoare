@@ -10,7 +10,7 @@ const escapeXml = (str = '') =>
     .replace(/'/g, '&apos;')
 
 export async function GET() {
-  const base = process.env.NEXT_PUBLIC_BASE_URL || 'https://destinatia-urmatoare.eu'
+  const base = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.destinatiaurmatoare.eu'
   let items = []
   try {
     const r = await fetch(`${base}/api/articles?limit=30`, { cache: 'no-store' })
@@ -40,7 +40,7 @@ export async function GET() {
       <category>${escapeXml(a.country || '')}</category>
       <category>${escapeXml(a.type || '')}</category>
       ${a.cover ? `<enclosure url="${escapeXml(a.cover)}" type="image/jpeg" />` : ''}
-      <author>contact@destinatia-urmatoare.eu (${escapeXml(a.author || 'Destinația Următoare')})</author>
+      <author>contact@destinatiaurmatoare.eu (${escapeXml(a.author || 'Destinația Următoare')})</author>
     </item>`
     })
     .join('\n')

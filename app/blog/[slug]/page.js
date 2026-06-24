@@ -62,7 +62,7 @@ export default async function ArticlePage({ params }) {
   if (!data?.article) return notFound()
   const a = data.article
   const related = data.related || []
-  const base = process.env.NEXT_PUBLIC_BASE_URL || 'https://destinatia-urmatoare.eu'
+  const base = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.destinatiaurmatoare.eu'
   const articleUrl = `${base}/blog/${a.slug}`
 
   // Approximate word count for SEO (Google likes wordCount on Articles)

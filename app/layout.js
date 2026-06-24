@@ -6,7 +6,7 @@ import SiteHeader from '@/components/site-header'
 import SiteFooter from '@/components/site-footer'
 import CookieBanner from '@/components/cookie-banner'
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://destinatia-urmatoare.eu'
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.destinatiaurmatoare.eu'
 
 export const metadata = {
   metadataBase: new URL(BASE_URL),
