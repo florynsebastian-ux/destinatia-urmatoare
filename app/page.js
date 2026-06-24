@@ -34,8 +34,27 @@ export default async function HomePage() {
   const featured = await getArticles({ featured: 'true', limit: '3' })
   const popular = await getArticles({ limit: '6' })
 
+  const base = process.env.NEXT_PUBLIC_BASE_URL || 'https://destinatia-urmatoare.eu'
+
+  // ItemList schema for featured articles — Google may show them as carousel in SERP
+  const itemListSchema = (featured.items || []).length > 0 ? {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    name: 'Articole recomandate · Destinația Următoare',
+    itemListElement: featured.items.map((a, i) => ({
+      '@type': 'ListItem',
+      position: i + 1,
+      url: `${base}/blog/${a.slug}`,
+      name: a.title,
+      image: a.cover,
+    })),
+  } : null
+
   return (
     <div>
+      {itemListSchema && (
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListSchema) }} />
+      )}
       {/* HERO */}
       <section className="relative h-[100vh] min-h-[600px] flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0">
