@@ -354,12 +354,53 @@ IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau dup�
       }
       const data = JSON.parse(toolCall.function.arguments)
 
-      // Image URLs - using picsum placeholder (user can swap with real URLs in admin)
+      // === REAL IMAGES via Pexels API ===
+      // Falls back to picsum.photos if Pexels fails / no key / no results.
       const seedFor = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 30)
-      data.cover = `https://picsum.photos/seed/${seedFor(data.coverImageQuery || data.city)}/1600/1000`
-      data.gallery = (data.galleryImageQueries || []).slice(0, 4).map(
-        (q, i) => `https://picsum.photos/seed/${seedFor(q)}-${i}/1200/800`
-      )
+      const picsumFallback = (q, i = 0, w = 1600, h = 1000) =>
+        `https://picsum.photos/seed/${seedFor(q)}-${i}/${w}/${h}`
+
+      const pexelsSearch = async (query, perPage = 6) => {
+        try {
+          const key = process.env.PEXELS_API_KEY
+          if (!key) return []
+          // Bias the query toward travel/destination context
+          const q = `${query} ${data.city || ''} travel`.trim()
+          const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(q)}&per_page=${perPage}&orientation=landscape`
+          const r = await fetch(url, { headers: { Authorization: key }, cache: 'no-store' })
+          if (!r.ok) return []
+          const j = await r.json()
+          return (j.photos || []).map((p) => ({
+            large: p.src?.landscape || p.src?.large2x || p.src?.large || p.src?.original,
+            medium: p.src?.large || p.src?.medium || p.src?.original,
+            photographer: p.photographer,
+          }))
+        } catch {
+          return []
+        }
+      }
+
+      // 1) Cover image — search by main query, take first result in best size
+      const coverResults = await pexelsSearch(data.coverImageQuery || data.city, 3)
+      data.cover = coverResults[0]?.large || picsumFallback(data.coverImageQuery || data.city, 0, 1600, 1000)
+
+      // 2) Gallery — one search per query, take first result, deduplicate
+      const usedUrls = new Set([data.cover])
+      const galleryQueries = (data.galleryImageQueries || []).slice(0, 4)
+      const gallery = []
+      for (let i = 0; i < galleryQueries.length; i++) {
+        const q = galleryQueries[i]
+        const results = await pexelsSearch(q, 3)
+        // pick first result not already used
+        const pick = results.find((p) => p.medium && !usedUrls.has(p.medium))
+        if (pick) {
+          gallery.push(pick.medium)
+          usedUrls.add(pick.medium)
+        } else {
+          gallery.push(picsumFallback(q, i, 1200, 800))
+        }
+      }
+      data.gallery = gallery
 
       // Default fields
       data.type = type
