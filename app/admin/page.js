@@ -34,6 +34,9 @@ export default function AdminPage() {
   const [bulkCities, setBulkCities] = useState('')
   const [bulkLoading, setBulkLoading] = useState(false)
   const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0, results: [] })
+  const [bulkType, setBulkType] = useState('City Break')
+  const [bulkDuration, setBulkDuration] = useState('5 zile')
+  const [bulkBudget, setBulkBudget] = useState('mediu')
 
   useEffect(() => {
     const t = typeof window !== 'undefined' ? localStorage.getItem('ud_admin_token') : null
@@ -188,17 +191,25 @@ export default function AdminPage() {
     const results = []
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]
-      // Parse: "City, Country" or just "City"
-      const parts = line.split(',').map(p => p.trim())
+      // Parse line. Format options:
+      //  "City"
+      //  "City, Country"
+      //  "City, Country | duration | type | budget"   (per-line overrides)
+      const segments = line.split('|').map(s => s.trim())
+      const cityPart = segments[0]
+      const parts = cityPart.split(',').map(p => p.trim())
       const city = parts[0]
       const country = parts[1] || ''
+      const duration = segments[1] || bulkDuration
+      const type = segments[2] || bulkType
+      const budget = segments[3] || bulkBudget
 
       setBulkProgress({ current: i + 1, total: lines.length, results })
       try {
         const r = await fetch('/api/ai/generate-article', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
-          body: JSON.stringify({ city, country, type: 'City Break', duration: '5 zile', budget: 'mediu' }),
+          body: JSON.stringify({ city, country, type, duration, budget }),
         })
         const d = await r.json()
         if (r.ok && d.article) {
@@ -331,15 +342,59 @@ export default function AdminPage() {
 
           {!bulkLoading && bulkProgress.results.length === 0 && (
             <>
-              <Field label="🌍 Listă orașe (unul per linie). Format: 'Oraș' sau 'Oraș, Țară'">
+              <div className="grid md:grid-cols-3 gap-4 mb-4">
+                <Field label="🎒 Tip călătorie (default)">
+                  <select className="w-full h-11 px-3 rounded-md border border-slate-200 bg-white" value={bulkType} onChange={(e) => setBulkType(e.target.value)}>
+                    <option>City Break</option>
+                    <option>Aventură</option>
+                    <option>Romantic</option>
+                    <option>Cultural</option>
+                    <option>Plajă</option>
+                    <option>Backpacking</option>
+                  </select>
+                </Field>
+                <Field label="⏰ Durată (default)">
+                  <select className="w-full h-11 px-3 rounded-md border border-slate-200 bg-white" value={bulkDuration} onChange={(e) => setBulkDuration(e.target.value)}>
+                    <option>2 zile</option>
+                    <option>3 zile</option>
+                    <option>4 zile</option>
+                    <option>5 zile</option>
+                    <option>7 zile</option>
+                    <option>10 zile</option>
+                    <option>14 zile</option>
+                    <option>21 zile</option>
+                  </select>
+                </Field>
+                <Field label="💰 Buget (default)">
+                  <select className="w-full h-11 px-3 rounded-md border border-slate-200 bg-white" value={bulkBudget} onChange={(e) => setBulkBudget(e.target.value)}>
+                    <option value="mic">Mic (backpacker)</option>
+                    <option value="mediu">Mediu (standard)</option>
+                    <option value="mare">Mare (lux)</option>
+                  </select>
+                </Field>
+              </div>
+
+              <Field label="🌍 Listă orașe (unul per linie)">
                 <Textarea
                   value={bulkCities}
                   onChange={(e) => setBulkCities(e.target.value)}
-                  placeholder={`Praga, Cehia\nViena, Austria\nMadrid, Spania\nAmsterdam\nKrakow, Polonia`}
-                  rows={10}
+                  placeholder={`Praga, Cehia\nViena, Austria | 7 zile | Cultural\nMadrid, Spania\nAmsterdam | 4 zile\nKrakow, Polonia | 3 zile | City Break | mic\nBali, Indonezia | 14 zile | Plajă | mediu`}
+                  rows={9}
                   className="font-mono text-sm"
                 />
               </Field>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-900 mb-4">
+                <p className="font-semibold mb-2">💡 Override per linie (opțional):</p>
+                <p className="text-xs mb-2">Folosește separatorul <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono">|</code> ca să specifici durată, tip, buget DIFERIT pentru un oraș anume:</p>
+                <ul className="text-xs space-y-1 font-mono">
+                  <li>• <code className="bg-amber-100 px-1.5 rounded">Praga, Cehia</code> → folosește setările default ↑</li>
+                  <li>• <code className="bg-amber-100 px-1.5 rounded">Bali, Indonezia | 14 zile | Plajă | mediu</code></li>
+                  <li>• <code className="bg-amber-100 px-1.5 rounded">Tokyo | 10 zile | Cultural</code> (buget rămâne default)</li>
+                </ul>
+                <p className="text-xs mt-2 italic">Ordinea după <code className="bg-amber-100 px-1 rounded">|</code> e: <strong>durată → tip → buget</strong></p>
+              </div>
+
               <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 text-sm text-indigo-900 mb-4">
                 <p className="font-semibold mb-2">⏱️ Estimări:</p>
                 <ul className="text-xs space-y-1">
@@ -347,7 +402,7 @@ export default function AdminPage() {
                   <li>• 5 articole = ~5 minute</li>
                   <li>• 10 articole = ~10 minute</li>
                   <li>• Articolele se salvează automat — nu trebuie să apeși Save</li>
-                  <li>• Tip călătorie: City Break, Durată: 5 zile, Buget: Mediu (default)</li>
+                  <li>• Default-uri actuale: <strong>{bulkType}</strong> · <strong>{bulkDuration}</strong> · buget <strong>{bulkBudget}</strong></li>
                 </ul>
               </div>
               <Button
