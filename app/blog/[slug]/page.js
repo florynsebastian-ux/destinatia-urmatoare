@@ -7,6 +7,9 @@ import NewsletterCTA from '@/components/newsletter-cta'
 import ArticleClient from './article-client'
 import WeatherWidget from '@/components/weather-widget'
 import Breadcrumbs from '@/components/breadcrumbs'
+import ArticleMap from '@/components/article-map'
+import Lightbox from '@/components/lightbox'
+import QuickFacts from '@/components/quick-facts'
 
 async function getArticle(slug) {
   try {
@@ -152,6 +155,7 @@ export default async function ArticlePage({ params }) {
     { id: 'obiective', label: 'Obiective turistice', has: a.attractions?.length > 0 },
     { id: 'restaurante', label: 'Restaurante', has: a.restaurants?.length > 0 },
     { id: 'sfaturi', label: 'Sfaturi utile', has: a.tips?.length > 0 },
+    { id: 'harta', label: 'Locația pe hartă', has: !!a.city || !!a.country },
     { id: 'galerie', label: 'Galerie foto', has: a.gallery?.length > 0 },
   ].filter((s) => s.has)
 
@@ -212,6 +216,9 @@ export default async function ArticlePage({ params }) {
 
           {/* ARTICLE BODY */}
           <article className="lg:col-span-9 order-1 lg:order-2 prose-travel max-w-none">
+            {/* Quick Facts card — country info (currency, language, timezone, etc.) */}
+            <QuickFacts country={a.country} />
+
             {a.intro && (
               <section id="introducere">
                 {a.intro.split('\n\n').map((p, i) => <p key={i}>{p}</p>)}
@@ -292,23 +299,19 @@ export default async function ArticlePage({ params }) {
               </section>
             )}
 
+            {/* Interactive map showing the destination location */}
+            <section id="harta">
+              <ArticleMap city={a.city} country={a.country} title={a.title} />
+            </section>
+
             {a.gallery?.length > 0 && (
               <section id="galerie">
                 <h2 className="flex items-center gap-3"><Camera className="w-7 h-7 text-cyan-600" />Galerie foto</h2>
-                <div className="not-prose grid grid-cols-2 md:grid-cols-3 gap-3 my-6">
-                  {a.gallery.map((img, i) => (
-                    <div key={i} className="relative aspect-square rounded-xl overflow-hidden group cursor-pointer">
-                      <Image
-                        src={img}
-                        alt={`${a.city || a.country} - ${a.title} - imagine ${i + 1}`}
-                        fill
-                        loading="lazy"
-                        className="object-cover img-zoom"
-                        sizes="(max-width:768px) 50vw, 33vw"
-                      />
-                    </div>
-                  ))}
-                </div>
+                <Lightbox
+                  images={a.gallery}
+                  title={a.title}
+                  cityCountry={`${a.city || ''}${a.city ? ', ' : ''}${a.country || ''}`}
+                />
               </section>
             )}
 
