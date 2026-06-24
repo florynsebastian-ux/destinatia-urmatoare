@@ -37,6 +37,7 @@ export default function AdminPage() {
   const [bulkType, setBulkType] = useState('City Break')
   const [bulkDuration, setBulkDuration] = useState('5 zile')
   const [bulkBudget, setBulkBudget] = useState('mediu')
+  const [bulkFeatured, setBulkFeatured] = useState(false)
 
   useEffect(() => {
     const t = typeof window !== 'undefined' ? localStorage.getItem('ud_admin_token') : null
@@ -216,6 +217,7 @@ export default function AdminPage() {
           // Auto-save the generated article
           const saveBody = {
             ...d.article,
+            featured: bulkFeatured, // ← user-controlled "recomandat" toggle
             tags: Array.isArray(d.article.tags) ? d.article.tags : [],
             attractions: d.article.attractions || [],
             restaurants: d.article.restaurants || [],
@@ -374,6 +376,33 @@ export default function AdminPage() {
                 </Field>
               </div>
 
+              {/* Featured toggle — articles will appear on homepage as "recomandate" */}
+              <label
+                htmlFor="bulk-featured"
+                className={`flex items-center gap-3 cursor-pointer rounded-lg border-2 p-4 mb-4 transition-colors ${
+                  bulkFeatured ? 'border-amber-400 bg-amber-50' : 'border-slate-200 bg-white hover:bg-slate-50'
+                }`}
+              >
+                <input
+                  id="bulk-featured"
+                  type="checkbox"
+                  checked={bulkFeatured}
+                  onChange={(e) => setBulkFeatured(e.target.checked)}
+                  className="w-5 h-5 rounded accent-amber-500 cursor-pointer"
+                />
+                <div className="flex-1">
+                  <div className="font-semibold text-sm text-slate-900 flex items-center gap-2">
+                    <span className="text-lg">⭐</span> Marchează ca <span className="text-amber-600">Recomandat</span>
+                  </div>
+                  <div className="text-xs text-slate-500 mt-0.5">
+                    Toate articolele din acest batch vor apărea în secțiunea „Articole recomandate&rdquo; de pe prima pagină.
+                  </div>
+                </div>
+                {bulkFeatured && (
+                  <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2.5 py-1 rounded-full">ON</span>
+                )}
+              </label>
+
               <Field label="🌍 Listă orașe (unul per linie)">
                 <Textarea
                   value={bulkCities}
@@ -402,7 +431,7 @@ export default function AdminPage() {
                   <li>• 5 articole = ~5 minute</li>
                   <li>• 10 articole = ~10 minute</li>
                   <li>• Articolele se salvează automat — nu trebuie să apeși Save</li>
-                  <li>• Default-uri actuale: <strong>{bulkType}</strong> · <strong>{bulkDuration}</strong> · buget <strong>{bulkBudget}</strong></li>
+                  <li>• Default-uri actuale: <strong>{bulkType}</strong> · <strong>{bulkDuration}</strong> · buget <strong>{bulkBudget}</strong>{bulkFeatured ? ' · ⭐ Recomandate' : ''}</li>
                 </ul>
               </div>
               <Button
