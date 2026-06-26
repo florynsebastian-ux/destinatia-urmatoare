@@ -11,6 +11,7 @@ import ArticleMap from '@/components/article-map'
 import Lightbox from '@/components/lightbox'
 import QuickFacts from '@/components/quick-facts'
 import BookingCTA from '@/components/booking-cta'
+import FlightsCTA from '@/components/flights-cta'
 
 async function getArticle(slug) {
   try {
@@ -245,6 +246,8 @@ export default async function ArticlePage({ params }) {
               <section id="transport">
                 <h2 className="flex items-center gap-3"><Plane className="w-7 h-7 text-cyan-600" />Transport</h2>
                 <p>{a.transport}</p>
+                {/* Booking.com Flights affiliate CTA */}
+                <FlightsCTA city={a.city} country={a.country} />
               </section>
             )}
 
