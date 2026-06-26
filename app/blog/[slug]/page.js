@@ -10,6 +10,7 @@ import Breadcrumbs from '@/components/breadcrumbs'
 import ArticleMap from '@/components/article-map'
 import Lightbox from '@/components/lightbox'
 import QuickFacts from '@/components/quick-facts'
+import BookingCTA from '@/components/booking-cta'
 
 async function getArticle(slug) {
   try {
@@ -251,6 +252,8 @@ export default async function ArticlePage({ params }) {
               <section id="cazare">
                 <h2 className="flex items-center gap-3"><Bed className="w-7 h-7 text-cyan-600" />Cazare recomandată</h2>
                 <p>{a.accommodation}</p>
+                {/* Booking.com affiliate CTA — deep-linked to this destination */}
+                <BookingCTA city={a.city} country={a.country} />
               </section>
             )}
 
