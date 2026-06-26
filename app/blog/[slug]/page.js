@@ -12,6 +12,7 @@ import Lightbox from '@/components/lightbox'
 import QuickFacts from '@/components/quick-facts'
 import BookingCTA from '@/components/booking-cta'
 import FlightsCTA from '@/components/flights-cta'
+import ReadingProgress from '@/components/reading-progress'
 
 async function getArticle(slug) {
   try {
@@ -163,6 +164,7 @@ export default async function ArticlePage({ params }) {
 
   return (
     <>
+      <ReadingProgress />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(articleSchema) }} />
       {faqSchema && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }} />}
       {placeSchema && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(placeSchema) }} />}
