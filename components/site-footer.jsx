@@ -30,7 +30,7 @@ export default function SiteFooter() {
             <h4 className="text-white font-semibold mb-4">Navigare</h4>
             <ul className="space-y-2 text-sm">
               <li><Link href="/blog" className="hover:text-cyan-400">Toate Ghidurile</Link></li>
-              <li><Link href="/travel-tips" className="hover:text-cyan-400">Travel Tips</Link></li>
+              <li><Link href="/travel-tips" className="hover:text-cyan-400">Sfaturi de călătorie</Link></li>
               <li><Link href="/despre" className="hover:text-cyan-400">Despre mine</Link></li>
               <li><Link href="/contact" className="hover:text-cyan-400">Contact</Link></li>
             </ul>

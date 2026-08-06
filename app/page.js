@@ -92,7 +92,7 @@ export default async function HomePage() {
             </Link>
             <Link href="/travel-tips">
               <Button size="lg" variant="outline" className="bg-white/10 backdrop-blur-md border-white/40 text-white hover:bg-white/20 h-14 px-8 text-base rounded-full font-semibold">
-                Travel Tips
+                Sfaturi de călătorie
                 <ArrowRight className="w-5 h-5 ml-2" />
               </Button>
             </Link>

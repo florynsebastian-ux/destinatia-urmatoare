@@ -10,7 +10,7 @@ import SmartSearch from '@/components/smart-search'
 const NAV = [
   { href: '/', label: 'Acasă' },
   { href: '/blog', label: 'Ghiduri' },
-  { href: '/travel-tips', label: 'Travel Tips' },
+  { href: '/travel-tips', label: 'Sfaturi de călătorie' },
   { href: '/despre', label: 'Despre' },
   { href: '/contact', label: 'Contact' },
 ]
