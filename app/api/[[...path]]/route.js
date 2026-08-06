@@ -261,6 +261,31 @@ async function handleRoute(request, { params }) {
       return handleCORS(NextResponse.json(clean(doc)))
     }
 
+    // ADMIN: BULK UPDATE YEAR (e.g., 2025 -> 2026 on all articles)
+    if (route === '/admin/bulk-update-year' && method === 'POST') {
+      if (!isAuth(request)) return handleCORS(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
+      const body = await request.json()
+      const fromYear = String(body.from || '2025')
+      const toYear = String(body.to || '2026')
+      // Replace year prefix in publishedAt (stored as ISO date string "YYYY-MM-DD")
+      const all = await db.collection('articles').find({}).toArray()
+      let updated = 0
+      for (const doc of all) {
+        const p = doc.publishedAt
+        if (typeof p === 'string' && p.startsWith(fromYear + '-')) {
+          const newDate = toYear + p.substring(fromYear.length)
+          await db.collection('articles').updateOne({ id: doc.id }, { $set: { publishedAt: newDate, updatedAt: new Date().toISOString() } })
+          updated++
+        } else if (p instanceof Date && p.getUTCFullYear() === parseInt(fromYear)) {
+          const nd = new Date(p)
+          nd.setUTCFullYear(parseInt(toYear))
+          await db.collection('articles').updateOne({ id: doc.id }, { $set: { publishedAt: nd.toISOString().slice(0, 10), updatedAt: new Date().toISOString() } })
+          updated++
+        }
+      }
+      return handleCORS(NextResponse.json({ ok: true, updated, total: all.length }))
+    }
+
     // AI ARTICLE GENERATOR: POST /api/ai/generate-article
     if (route === '/ai/generate-article' && method === 'POST') {
       if (!isAuth(request)) return handleCORS(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
@@ -280,7 +305,7 @@ async function handleRoute(request, { params }) {
 - Durată: ${duration}
 - Buget vizat: ${budget}
 
-Scrie complet în limba română cu diacritice, cu detalii concrete (prețuri 2025 în EUR, nume reale de restaurante/cartiere/hoteluri, ore de funcționare, sfaturi practice). Tonul: prietenos, informativ, ca un prieten care a fost acolo.
+Scrie complet în limba română cu diacritice, cu detalii concrete (prețuri 2026 în EUR, nume reale de restaurante/cartiere/hoteluri, ore de funcționare, sfaturi practice). Tonul: prietenos, informativ, ca un prieten care a fost acolo.
 
 IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau după), exact cu structura cerută în schema function. NU include în slug niciun caracter special, doar litere mici fără diacritice și cratimă.`
 

@@ -286,6 +286,31 @@ export default function AdminPage() {
         <div className="flex gap-2 flex-wrap">
           {view === 'list' && (
             <>
+              <Button
+                onClick={async () => {
+                  if (!confirm('Actualizezi TOATE articolele din 2025 în 2026?\nAsta va schimba publishedAt pentru toate articolele care au anul 2025.')) return
+                  try {
+                    const r = await fetch('/api/admin/bulk-update-year', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+                      body: JSON.stringify({ from: '2025', to: '2026' }),
+                    })
+                    const d = await r.json()
+                    if (r.ok) {
+                      alert(`✅ Gata! Actualizate: ${d.updated} din ${d.total} articole.`)
+                      await fetchArticles()
+                    } else {
+                      alert('❌ Eroare: ' + (d.error || 'neștiu'))
+                    }
+                  } catch (e) {
+                    alert('❌ Eroare rețea: ' + e.message)
+                  }
+                }}
+                variant="outline"
+                className="border-amber-400 text-amber-700 hover:bg-amber-50"
+              >
+                📅 2025 → 2026
+              </Button>
               <Button onClick={() => setView('bulk')} className="bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white">
                 <Sparkles className="w-4 h-4 mr-2" />Bulk AI (5+ articole)
               </Button>
