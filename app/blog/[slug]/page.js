@@ -13,6 +13,7 @@ import QuickFacts from '@/components/quick-facts'
 import BookingCTA from '@/components/booking-cta'
 import FlightsCTA from '@/components/flights-cta'
 import ReadingProgress from '@/components/reading-progress'
+import RelatedSections from '@/components/related-sections'
 
 async function getArticle(slug) {
   try {
@@ -68,6 +69,7 @@ export default async function ArticlePage({ params }) {
   if (!data?.article) return notFound()
   const a = data.article
   const related = data.related || []
+  const relatedGroups = data.relatedGroups || {}
   const base = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.destinatiaurmatoare.eu'
   const articleUrl = `${base}/blog/${a.slug}`
 
@@ -446,27 +448,8 @@ export default async function ArticlePage({ params }) {
         </div>
       </div>
 
-      {/* RELATED */}
-      {related.length > 0 && (
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 border-t border-slate-100">
-          <h2 className="font-display text-3xl font-bold text-slate-900 mb-8">Articole similare</h2>
-          <div className="grid md:grid-cols-3 gap-6">
-            {related.map((r) => (
-              <Link key={r.slug} href={`/blog/${r.slug}`} className="group card-hover">
-                <article className="bg-white rounded-2xl overflow-hidden border border-slate-100">
-                  <div className="relative aspect-[16/10]">
-                    <Image src={r.cover} alt={r.title} fill className="object-cover img-zoom" sizes="33vw" />
-                  </div>
-                  <div className="p-5">
-                    <Badge variant="secondary" className="bg-cyan-50 text-cyan-700 hover:bg-cyan-50 mb-2">{r.type}</Badge>
-                    <h3 className="font-display font-bold text-slate-900 group-hover:text-cyan-600 transition-colors leading-snug">{r.title}</h3>
-                  </div>
-                </article>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
+      {/* RELATED — internal linking with contextual sections (SEO boost) */}
+      <RelatedSections groups={relatedGroups} currentArticle={a} />
 
       <div className="py-16">
         <NewsletterCTA />

@@ -134,15 +134,38 @@ async function handleRoute(request, { params }) {
       const doc = await db.collection('articles').findOne({ slug: path[2] })
       if (!doc) return handleCORS(NextResponse.json({ error: 'Not found' }, { status: 404 }))
 
-      // Related: same continent, exclude self
-      const related = await db
-        .collection('articles')
-        .find({ continent: doc.continent, slug: { $ne: doc.slug } })
-        .project({ slug: 1, title: 1, cover: 1, excerpt: 1, country: 1, readingMinutes: 1, type: 1 })
-        .limit(3)
-        .toArray()
+      const proj = { slug: 1, title: 1, cover: 1, excerpt: 1, country: 1, city: 1, continent: 1, readingMinutes: 1, type: 1, publishedAt: 1 }
+      const excludeSelf = { slug: { $ne: doc.slug } }
 
-      return handleCORS(NextResponse.json({ article: clean(doc), related: related.map(clean) }))
+      // Same-country articles (highest relevance, e.g., alte ghiduri Franța)
+      const sameCountry = doc.country ? await db.collection('articles')
+        .find({ ...excludeSelf, country: doc.country })
+        .project(proj).limit(6).toArray() : []
+
+      // Same-type articles (e.g., alte City Break-uri)
+      const sameCountrySlugs = new Set(sameCountry.map(x => x.slug))
+      const sameType = doc.type ? await db.collection('articles')
+        .find({ ...excludeSelf, type: doc.type, slug: { $nin: [doc.slug, ...sameCountrySlugs] } })
+        .project(proj).limit(6).toArray() : []
+
+      // Same-continent fallback
+      const usedSlugs = new Set([...sameCountry, ...sameType].map(x => x.slug))
+      const sameContinent = doc.continent ? await db.collection('articles')
+        .find({ ...excludeSelf, continent: doc.continent, slug: { $nin: [doc.slug, ...Array.from(usedSlugs)] } })
+        .project(proj).limit(6).toArray() : []
+
+      // Flat "related" (top 3 for backward-compat)
+      const related = [...sameCountry, ...sameType, ...sameContinent].slice(0, 3)
+
+      return handleCORS(NextResponse.json({
+        article: clean(doc),
+        related: related.map(clean),
+        relatedGroups: {
+          sameCountry: sameCountry.slice(0, 4).map(clean),
+          sameType: sameType.slice(0, 4).map(clean),
+          sameContinent: sameContinent.slice(0, 4).map(clean),
+        },
+      }))
     }
 
     // FILTERS META: GET /api/articles/meta
