@@ -149,6 +149,94 @@ export default async function ArticlePage({ params }) {
     touristType: a.type,
   } : null
 
+  // ============================================================
+  // HowTo Schema — "Cum să vizitezi X în Y zile" step-by-step guide
+  // Google + Bing still index this for AI Overviews, voice search, and
+  // structured understanding of itineraries.
+  // Steps are auto-built from the attractions list.
+  // ============================================================
+  const parseDurationDays = (str = '') => {
+    const m = String(str).match(/(\d+)\s*(zil|săpt|sapt|luni|luna|zi)/i)
+    if (!m) return null
+    const n = parseInt(m[1], 10)
+    const unit = m[2].toLowerCase()
+    if (unit.startsWith('săpt') || unit.startsWith('sapt')) return n * 7
+    if (unit.startsWith('lun')) return n * 30
+    return n
+  }
+  // Try duration field first, then fall back to extracting from title
+  // (e.g., "Ghid Paris în 7 zile" → 7 days)
+  const daysCount = parseDurationDays(a.duration) || parseDurationDays(a.title) || parseDurationDays(a.slug)
+  const isoDuration = daysCount ? `P${daysCount}D` : null
+
+  const howToSchema = (a.attractions?.length >= 3) ? {
+    '@context': 'https://schema.org',
+    '@type': 'HowTo',
+    '@id': `${articleUrl}#howto`,
+    name: `Cum să vizitezi ${a.city || a.country}${a.duration ? ` în ${a.duration}` : ''}`,
+    description: a.excerpt,
+    image: a.cover,
+    ...(isoDuration ? { totalTime: isoDuration } : {}),
+    ...(a.budget ? {
+      estimatedCost: {
+        '@type': 'MonetaryAmount',
+        currency: 'EUR',
+        value: a.budget.match(/\d+/)?.[0] || undefined,
+        description: a.budget.length < 200 ? a.budget : undefined,
+      }
+    } : {}),
+    supply: (a.tips || []).slice(0, 5).map(t => ({ '@type': 'HowToSupply', name: t.length < 100 ? t : t.slice(0, 100) + '...' })),
+    step: a.attractions.map((att, i) => ({
+      '@type': 'HowToStep',
+      position: i + 1,
+      name: att.name,
+      text: att.description || `Vizitează ${att.name} în ${a.city || a.country}.`,
+      ...(a.cover ? { image: a.cover } : {}),
+    })),
+  } : null
+
+  // ============================================================
+  // TouristTrip Schema — travel-specific, designed for itineraries.
+  // Google uses this for its travel Knowledge Graph and Travel Search.
+  // ============================================================
+  const touristTripSchema = (a.attractions?.length >= 2 && a.country) ? {
+    '@context': 'https://schema.org',
+    '@type': 'TouristTrip',
+    '@id': `${articleUrl}#trip`,
+    name: a.title,
+    description: a.excerpt,
+    image: a.cover,
+    touristType: [a.type, 'Călătorie individuală'].filter(Boolean),
+    ...(isoDuration ? { duration: isoDuration } : {}),
+    itinerary: {
+      '@type': 'ItemList',
+      itemListElement: a.attractions.map((att, i) => ({
+        '@type': 'ListItem',
+        position: i + 1,
+        item: {
+          '@type': 'TouristAttraction',
+          name: att.name,
+          description: att.description,
+          ...(a.city ? {
+            address: {
+              '@type': 'PostalAddress',
+              addressLocality: a.city,
+              addressCountry: a.country,
+            }
+          } : {}),
+        },
+      })),
+    },
+    provider: { '@id': `${base}/#organization` },
+    offers: {
+      '@type': 'Offer',
+      price: (a.budget || '').match(/\d+/)?.[0] || '0',
+      priceCurrency: 'EUR',
+      availability: 'https://schema.org/InStock',
+      description: a.budget || 'Contactează pentru detalii buget',
+    },
+  } : null
+
   const sections = [
     { id: 'introducere', label: 'Introducere', has: !!a.intro },
     { id: 'cand-sa-vizitezi', label: 'Când să vizitezi', has: !!a.whenToVisit },
@@ -168,6 +256,8 @@ export default async function ArticlePage({ params }) {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(articleSchema) }} />
       {faqSchema && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }} />}
       {placeSchema && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(placeSchema) }} />}
+      {howToSchema && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(howToSchema) }} />}
+      {touristTripSchema && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(touristTripSchema) }} />}
 
       {/* HERO */}
       <section className="relative h-[80vh] min-h-[500px] flex items-end">
