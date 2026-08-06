@@ -22,6 +22,7 @@ export async function GET() {
     { path: '', priority: 1.0, freq: 'daily' },
     { path: '/blog', priority: 0.9, freq: 'daily' },
     { path: '/travel-tips', priority: 0.7, freq: 'weekly' },
+    { path: '/autor/andrei-munteanu', priority: 0.7, freq: 'weekly' },
     { path: '/despre', priority: 0.5, freq: 'monthly' },
     { path: '/contact', priority: 0.5, freq: 'monthly' },
     { path: '/politica-confidentialitate', priority: 0.3, freq: 'yearly' },

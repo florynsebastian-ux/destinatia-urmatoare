@@ -276,7 +276,12 @@ export default async function ArticlePage({ params }) {
           </h1>
           <p className="text-cyan-50 text-lg max-w-2xl mb-6 leading-relaxed">{a.excerpt}</p>
           <div className="flex flex-wrap items-center gap-5 text-sm text-white/90">
-            <span className="flex items-center gap-1.5"><User className="w-4 h-4" />{a.author}</span>
+            <span className="flex items-center gap-1.5">
+              <User className="w-4 h-4" />
+              <Link href={`/autor/andrei-munteanu`} className="hover:text-cyan-200 underline-offset-4 hover:underline transition-colors">
+                {a.author}
+              </Link>
+            </span>
             <span className="flex items-center gap-1.5"><Calendar className="w-4 h-4" />{new Date(a.publishedAt).toLocaleDateString('ro-RO', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
             <span className="flex items-center gap-1.5"><Clock className="w-4 h-4" />{a.readingMinutes} min citire</span>
           </div>
