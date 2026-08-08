@@ -5,6 +5,7 @@ import { Toaster } from '@/components/ui/sonner'
 import SiteHeader from '@/components/site-header'
 import SiteFooter from '@/components/site-footer'
 import CookieBanner from '@/components/cookie-banner'
+import { Analytics } from '@vercel/analytics/next'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.destinatiaurmatoare.eu'
 
@@ -126,6 +127,9 @@ export default function RootLayout({ children }) {
             </Script>
           </>
         )}
+
+        {/* Vercel Web Analytics */}
+        <Analytics />
       </body>
     </html>
   )
