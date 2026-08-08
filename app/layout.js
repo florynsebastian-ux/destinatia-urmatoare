@@ -5,6 +5,7 @@ import { Toaster } from '@/components/ui/sonner'
 import SiteHeader from '@/components/site-header'
 import SiteFooter from '@/components/site-footer'
 import CookieBanner from '@/components/cookie-banner'
+import { SpeedInsights } from '@vercel/speed-insights/next'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.destinatiaurmatoare.eu'
 
@@ -108,6 +109,7 @@ export default function RootLayout({ children }) {
           <Toaster richColors position="top-right" />
           <CookieBanner />
         </Providers>
+        <SpeedInsights />
 
         {/* Google Analytics 4 */}
         {process.env.NEXT_PUBLIC_GA_ID && (
