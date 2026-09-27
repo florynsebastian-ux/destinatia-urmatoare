@@ -390,7 +390,7 @@ IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau dup�
         const { GoogleGenerativeAI } = await import('@google/generative-ai')
         const genAI = new GoogleGenerativeAI(geminiKey)
         outer: for (const modelName of geminiModels) {
-          for (let attempt = 1; attempt <= 3; attempt++) {
+          for (let attempt = 1; attempt <= 2; attempt++) {
             try {
               const model = genAI.getGenerativeModel({
                 model: modelName,
@@ -402,7 +402,11 @@ IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau dup�
                   responseSchema: articleSchema,
                 },
               })
-              const result = await model.generateContent(userPrompt)
+              // Race the Gemini call against a 35s timeout so we never blow Vercel's function budget.
+              const result = await Promise.race([
+                model.generateContent(userPrompt),
+                new Promise((_, rej) => setTimeout(() => rej(new Error('GEMINI_TIMEOUT_35s')), 35000)),
+              ])
               const text = result.response.text()
               data = JSON.parse(text)
               providerUsed = `gemini/${modelName}`
@@ -411,8 +415,8 @@ IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau dup�
               const msg = String(e.message || '').slice(0, 200)
               console.error(`Gemini ${modelName} attempt ${attempt}:`, msg)
               // Retry only on 503 (overload); other errors → next model
-              if (msg.includes('503') && attempt < 3) {
-                await new Promise(r => setTimeout(r, 1500 * attempt)) // 1.5s, 3s
+              if (msg.includes('503') && attempt < 2) {
+                await new Promise(r => setTimeout(r, 1200)) // single short backoff
                 continue
               }
               break // next model
@@ -489,20 +493,22 @@ IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau dup�
       const coverResults = await pexelsSearch(data.coverImageQuery || data.city, 3)
       data.cover = coverResults[0]?.large || picsumFallback(data.coverImageQuery || data.city, 0, 1600, 1000)
 
-      // 2) Gallery — one search per query, take first result, deduplicate
+      // 2) Gallery — parallel searches (much faster than sequential for-await)
       const usedUrls = new Set([data.cover])
       const galleryQueries = (data.galleryImageQueries || []).slice(0, 4)
+      const galleryResults = await Promise.all(
+        galleryQueries.map((q) => pexelsSearch(q, 3))
+      )
       const gallery = []
       for (let i = 0; i < galleryQueries.length; i++) {
-        const q = galleryQueries[i]
-        const results = await pexelsSearch(q, 3)
+        const results = galleryResults[i]
         // pick first result not already used
         const pick = results.find((p) => p.medium && !usedUrls.has(p.medium))
         if (pick) {
           gallery.push(pick.medium)
           usedUrls.add(pick.medium)
         } else {
-          gallery.push(picsumFallback(q, i, 1200, 800))
+          gallery.push(picsumFallback(galleryQueries[i], i, 1200, 800))
         }
       }
       data.gallery = gallery

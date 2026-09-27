@@ -212,7 +212,17 @@ export default function AdminPage() {
           headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
           body: JSON.stringify({ city, country, type, duration, budget }),
         })
-        const d = await r.json()
+        // Robust parse: on Vercel timeout the response is HTML ("An error occurred..."), not JSON.
+        const raw = await r.text()
+        let d = null
+        try { d = JSON.parse(raw) } catch { d = null }
+        if (!d) {
+          const hint = r.status === 504 || raw.includes('An error occurred')
+            ? '⏱️ Timeout server (Gemini prea lent). Reîncearcă acest oraș individual.'
+            : `Răspuns invalid (HTTP ${r.status}). Reîncearcă.`
+          results.push({ city, status: 'error', error: hint })
+          continue
+        }
         if (r.ok && d.article) {
           // Auto-save the generated article
           const saveBody = {
