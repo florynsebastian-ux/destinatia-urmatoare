@@ -237,10 +237,23 @@ export default function AdminPage() {
             results.push({ city, status: 'error', error: 'Eroare salvare' })
           }
         } else {
-          results.push({ city, status: 'error', error: d.error || 'Eroare AI' })
+          const errMsg = d.code === 'BUDGET_EXCEEDED'
+            ? '💰 Buget LLM depășit — solicită buget nou de la Emergent'
+            : d.code === 'RATE_LIMITED'
+              ? '⏳ Prea multe cereri — așteaptă și încearcă din nou'
+              : (d.detail || d.error || 'Eroare AI')
+          results.push({ city, status: 'error', error: errMsg, code: d.code })
+          // Stop early if budget exceeded — no point trying more articles
+          if (d.code === 'BUDGET_EXCEEDED') {
+            for (let j = i + 1; j < lines.length; j++) {
+              const remainCity = lines[j].split('|')[0].split(',')[0].trim()
+              results.push({ city: remainCity, status: 'error', error: '⏭️ Sărit (buget epuizat)', code: 'SKIPPED' })
+            }
+            break
+          }
         }
       } catch (e) {
-        results.push({ city, status: 'error', error: 'Eroare rețea' })
+        results.push({ city, status: 'error', error: 'Eroare rețea: ' + (e.message || 'necunoscută') })
       }
     }
 
@@ -298,7 +311,7 @@ export default function AdminPage() {
                     const d = await r.json()
                     if (r.ok) {
                       alert(`✅ Gata! Actualizate: ${d.updated} din ${d.total} articole.`)
-                      await fetchArticles()
+                      await loadArticles()
                     } else {
                       alert('❌ Eroare: ' + (d.error || 'neștiu'))
                     }

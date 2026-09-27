@@ -316,11 +316,6 @@ async function handleRoute(request, { params }) {
       const { city, country, type = 'City Break', duration = '5 zile', budget = 'mediu' } = body
       if (!city) return handleCORS(NextResponse.json({ error: 'city este obligatoriu' }, { status: 400 }))
 
-      const openai = new OpenAI({
-        apiKey: process.env.EMERGENT_LLM_KEY,
-        baseURL: 'https://integrations.emergentagent.com/llm',
-      })
-
       const userPrompt = `Generează un ghid turistic detaliat și profesional pentru:
 - Oraș: ${city}
 - Țară: ${country || 'detectează automat'}
@@ -330,77 +325,139 @@ async function handleRoute(request, { params }) {
 
 Scrie complet în limba română cu diacritice, cu detalii concrete (prețuri 2026 în EUR, nume reale de restaurante/cartiere/hoteluri, ore de funcționare, sfaturi practice). Tonul: prietenos, informativ, ca un prieten care a fost acolo.
 
-IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau după), exact cu structura cerută în schema function. NU include în slug niciun caracter special, doar litere mici fără diacritice și cratimă.`
+IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau după), exact cu structura cerută. NU include în slug niciun caracter special, doar litere mici fără diacritice și cratimă.`
 
-      const completion = await openai.chat.completions.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 4000,
-        temperature: 0.7,
-        messages: [
-          { role: 'system', content: 'Ești un expert în turism și travel blogger profesionist român cu experiență de peste 10 ani. Scrii ghiduri detaliate, practice, cu informații verificate. Tonul tău este prietenos, narativ. Scrii EXCLUSIV în limba română corectă cu diacritice.' },
-          { role: 'user', content: userPrompt },
-        ],
-        tools: [{
-          type: 'function',
-          function: {
-            name: 'create_travel_guide',
-            description: 'Creează un ghid turistic complet și structurat',
-            parameters: {
+      const systemInstruction = 'Ești un expert în turism și travel blogger profesionist român cu experiență de peste 10 ani. Scrii ghiduri detaliate, practice, cu informații verificate. Tonul tău este prietenos, narativ. Scrii EXCLUSIV în limba română corectă cu diacritice.'
+
+      // JSON schema for Gemini structured output (subset of OpenAPI 3 that Gemini supports)
+      const articleSchema = {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          slug: { type: 'string' },
+          excerpt: { type: 'string' },
+          continent: { type: 'string', enum: ['Europa', 'Asia', 'America', 'Africa', 'Oceania'] },
+          country: { type: 'string' },
+          city: { type: 'string' },
+          intro: { type: 'string' },
+          whenToVisit: { type: 'string' },
+          budget: { type: 'string' },
+          transport: { type: 'string' },
+          accommodation: { type: 'string' },
+          attractions: {
+            type: 'array',
+            items: {
               type: 'object',
               properties: {
-                title: { type: 'string', description: 'Titlu atractiv SEO-friendly, ex: "Lisabona în 4 zile: ghid complet 2025"' },
-                slug: { type: 'string', description: 'URL slug lowercase cu cratimă, fără diacritice, ex: "lisabona-ghid-4-zile"' },
-                excerpt: { type: 'string', description: 'Rezumat captivant de 2 propoziții (max 220 caractere)' },
-                continent: { type: 'string', enum: ['Europa', 'Asia', 'America', 'Africa', 'Oceania'] },
-                country: { type: 'string' },
-                city: { type: 'string' },
-                intro: { type: 'string', description: 'Introducere narativă de 2-3 paragrafe separate prin \\n\\n' },
-                whenToVisit: { type: 'string', description: 'Recomandare detaliată cu luni, vreme, evenimente (4-6 propoziții)' },
-                budget: { type: 'string', description: 'Buget concret în EUR pentru durata aleasă, 2 persoane, detaliat pe categorii' },
-                transport: { type: 'string', description: 'Aeroport, transfer în oraș, transport public' },
-                accommodation: { type: 'string', description: '2-3 cartiere + 2-3 hoteluri specifice cu preț' },
-                attractions: {
-                  type: 'array',
-                  description: '5-7 obiective turistice',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      name: { type: 'string' },
-                      description: { type: 'string', description: 'Descriere scurtă cu sfat practic (1-2 propoziții)' },
-                    },
-                    required: ['name', 'description'],
-                  },
-                },
-                restaurants: {
-                  type: 'array',
-                  description: '3-5 restaurante autentice',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      name: { type: 'string' },
-                      description: { type: 'string' },
-                    },
-                    required: ['name', 'description'],
-                  },
-                },
-                tips: { type: 'array', description: '5-7 sfaturi practice', items: { type: 'string' } },
-                tags: { type: 'array', description: '4-6 tag-uri SEO', items: { type: 'string' } },
-                readingMinutes: { type: 'number' },
-                coverImageQuery: { type: 'string', description: 'Cuvinte cheie ENGLEZE pentru cover image' },
-                galleryImageQueries: { type: 'array', description: '4 sintagme ENGLEZE pentru galerie', items: { type: 'string' } },
+                name: { type: 'string' },
+                description: { type: 'string' },
               },
-              required: ['title', 'slug', 'excerpt', 'continent', 'country', 'city', 'intro', 'whenToVisit', 'budget', 'transport', 'accommodation', 'attractions', 'restaurants', 'tips', 'tags', 'readingMinutes', 'coverImageQuery', 'galleryImageQueries'],
+              required: ['name', 'description'],
             },
           },
-        }],
-        tool_choice: { type: 'function', function: { name: 'create_travel_guide' } },
-      })
-
-      const toolCall = completion.choices?.[0]?.message?.tool_calls?.[0]
-      if (!toolCall || !toolCall.function?.arguments) {
-        return handleCORS(NextResponse.json({ error: 'AI nu a returnat structura corectă', raw: completion }, { status: 500 }))
+          restaurants: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                description: { type: 'string' },
+              },
+              required: ['name', 'description'],
+            },
+          },
+          tips: { type: 'array', items: { type: 'string' } },
+          tags: { type: 'array', items: { type: 'string' } },
+          readingMinutes: { type: 'number' },
+          coverImageQuery: { type: 'string' },
+          galleryImageQueries: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['title', 'slug', 'excerpt', 'continent', 'country', 'city', 'intro', 'whenToVisit', 'budget', 'transport', 'accommodation', 'attractions', 'restaurants', 'tips', 'tags', 'readingMinutes', 'coverImageQuery', 'galleryImageQueries'],
       }
-      const data = JSON.parse(toolCall.function.arguments)
+
+      // ============================================================
+      // Call Google Gemini API (free tier: 1500 requests/day)
+      // Falls back to Emergent LLM Gateway if Gemini fails or no key.
+      // ============================================================
+      let data = null
+      let providerUsed = 'none'
+
+      const geminiKey = process.env.GEMINI_API_KEY
+      // Try Gemini with retry on transient 503 (high demand)
+      const geminiModels = ['gemini-3.8-flash']
+
+      if (geminiKey) {
+        const { GoogleGenerativeAI } = await import('@google/generative-ai')
+        const genAI = new GoogleGenerativeAI(geminiKey)
+        outer: for (const modelName of geminiModels) {
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+              const model = genAI.getGenerativeModel({
+                model: modelName,
+                systemInstruction,
+                generationConfig: {
+                  temperature: 0.7,
+                  maxOutputTokens: 4096,
+                  responseMimeType: 'application/json',
+                  responseSchema: articleSchema,
+                },
+              })
+              const result = await model.generateContent(userPrompt)
+              const text = result.response.text()
+              data = JSON.parse(text)
+              providerUsed = `gemini/${modelName}`
+              break outer // success
+            } catch (e) {
+              const msg = String(e.message || '').slice(0, 200)
+              console.error(`Gemini ${modelName} attempt ${attempt}:`, msg)
+              // Retry only on 503 (overload); other errors → next model
+              if (msg.includes('503') && attempt < 3) {
+                await new Promise(r => setTimeout(r, 1500 * attempt)) // 1.5s, 3s
+                continue
+              }
+              break // next model
+            }
+          }
+        }
+      }
+
+      // Fallback: Emergent LLM Gateway (Claude Haiku) — only if Gemini failed
+      if (!data && process.env.EMERGENT_LLM_KEY) {
+        const openai = new OpenAI({
+          apiKey: process.env.EMERGENT_LLM_KEY,
+          baseURL: 'https://integrations.emergentagent.com/llm',
+        })
+        const completion = await openai.chat.completions.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 4000,
+          temperature: 0.7,
+          messages: [
+            { role: 'system', content: systemInstruction },
+            { role: 'user', content: userPrompt },
+          ],
+          tools: [{
+            type: 'function',
+            function: {
+              name: 'create_travel_guide',
+              description: 'Creează un ghid turistic complet și structurat',
+              parameters: articleSchema,
+            },
+          }],
+          tool_choice: { type: 'function', function: { name: 'create_travel_guide' } },
+        })
+        const toolCall = completion.choices?.[0]?.message?.tool_calls?.[0]
+        if (toolCall?.function?.arguments) {
+          data = JSON.parse(toolCall.function.arguments)
+          providerUsed = 'emergent'
+        }
+      }
+
+      if (!data) {
+        return handleCORS(NextResponse.json({
+          error: 'AI nu a returnat un răspuns valid',
+          detail: 'Verifică cheile GEMINI_API_KEY sau EMERGENT_LLM_KEY.',
+        }, { status: 500 }))
+      }
 
       // === REAL IMAGES via Pexels API ===
       // Falls back to picsum.photos if Pexels fails / no key / no results.
@@ -455,6 +512,7 @@ IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau dup�
       data.featured = false
       data.author = 'Andrei Munteanu'
       data.publishedAt = new Date().toISOString().slice(0, 10)
+      data._provider = providerUsed // helpful debug info
 
       return handleCORS(NextResponse.json({ article: data }))
     }
@@ -488,6 +546,22 @@ IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau dup�
     return handleCORS(NextResponse.json({ error: `Route ${route} not found` }, { status: 404 }))
   } catch (error) {
     console.error('API Error:', error)
+    const msg = String(error.message || '')
+    // Recognize common LLM Gateway budget errors and return a user-friendly message.
+    if (msg.includes('Budget has been exceeded') || msg.includes('budget')) {
+      return handleCORS(NextResponse.json({
+        error: 'Buget LLM depășit',
+        detail: 'Cheia AI a atins limita de buget. Solicită buget suplimentar sau înlocuiește cheia EMERGENT_LLM_KEY.',
+        code: 'BUDGET_EXCEEDED',
+      }, { status: 402 })) // 402 = Payment Required
+    }
+    if (msg.includes('rate limit') || msg.includes('429')) {
+      return handleCORS(NextResponse.json({
+        error: 'Prea multe cereri',
+        detail: 'Așteaptă câteva minute înainte să încerci din nou.',
+        code: 'RATE_LIMITED',
+      }, { status: 429 }))
+    }
     return handleCORS(NextResponse.json({ error: 'Internal server error', detail: error.message }, { status: 500 }))
   }
 }

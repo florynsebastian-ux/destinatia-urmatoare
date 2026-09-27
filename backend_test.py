@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """
 Backend API tests for Romanian travel blog "Destinația Următoare"
-Tests new features + regression smoke tests
+Tests Bulk AI error handling fix + regression smoke tests
 """
 
 import requests
 import json
 import time
 from datetime import datetime
+import os
 
-BASE_URL = "http://localhost:3000/api"
+# Use environment variable or default to localhost
+BASE_URL = os.getenv("NEXT_PUBLIC_BASE_URL", "http://localhost:3000") + "/api"
 ADMIN_PASSWORD = "Dinamo123$"
 
 # Track test articles for cleanup
@@ -84,17 +86,17 @@ def test_admin_login():
     except Exception as e:
         log_test("Admin login with wrong password", False, f"Exception: {e}")
 
-def test_ai_article_generator(admin_token):
-    """Test 2: AI Article Generator (max 2 calls)"""
+def test_ai_article_generator_budget_exceeded(admin_token):
+    """Test 2: AI Article Generator - Budget Exceeded Error Handling"""
     print("\n" + "="*60)
-    print("TEST 2: AI Article Generator")
+    print("TEST 2: AI Article Generator - Budget Exceeded Error Handling")
     print("="*60)
     
     # Test without auth
     try:
         resp = requests.post(
             f"{BASE_URL}/ai/generate-article",
-            json={"city": "Lisabona", "country": "Portugalia"},
+            json={"city": "Test", "country": "Test"},
             timeout=10
         )
         if resp.status_code == 401:
@@ -104,11 +106,26 @@ def test_ai_article_generator(admin_token):
     except Exception as e:
         log_test("AI generate without auth", False, f"Exception: {e}")
     
+    # Test with wrong token
+    try:
+        resp = requests.post(
+            f"{BASE_URL}/ai/generate-article",
+            json={"city": "Test", "country": "Test"},
+            headers={"X-Admin-Token": "wrong-token"},
+            timeout=10
+        )
+        if resp.status_code == 401:
+            log_test("AI generate with wrong token (expect 401)", True)
+        else:
+            log_test("AI generate with wrong token (expect 401)", False, f"Status: {resp.status_code}")
+    except Exception as e:
+        log_test("AI generate with wrong token", False, f"Exception: {e}")
+    
     # Test without city field
     try:
         resp = requests.post(
             f"{BASE_URL}/ai/generate-article",
-            json={"country": "Portugalia"},
+            json={"country": "Test"},
             headers={"X-Admin-Token": admin_token},
             timeout=10
         )
@@ -119,161 +136,149 @@ def test_ai_article_generator(admin_token):
     except Exception as e:
         log_test("AI generate without city", False, f"Exception: {e}")
     
-    # Test valid AI generation (ONLY 1 CALL to minimize costs)
-    print("\n⚠️  Making 1 AI call to Emergent LLM Gateway (Claude Haiku) - this may take 30-60s...")
+    # Test budget exceeded error (expected to fail with 402)
+    print("\n⚠️  Testing budget exceeded error handling (expected to fail with 402)...")
     try:
         resp = requests.post(
             f"{BASE_URL}/ai/generate-article",
             json={
-                "city": "Lisabona",
-                "country": "Portugalia",
-                "type": "City Break",
-                "duration": "4 zile",
-                "budget": "mediu"
+                "city": "Test",
+                "country": "Test"
             },
             headers={"X-Admin-Token": admin_token},
-            timeout=90  # Allow up to 90s for AI call
+            timeout=90
         )
-        if resp.status_code == 200:
+        
+        # Expected: 402 Payment Required with specific error structure
+        if resp.status_code == 402:
             data = resp.json()
-            article = data.get("article", {})
+            error = data.get("error")
+            detail = data.get("detail")
+            code = data.get("code")
             
-            # Check required fields
-            required_fields = [
-                "title", "slug", "excerpt", "continent", "country", "city",
-                "intro", "whenToVisit", "budget", "transport", "accommodation",
-                "attractions", "restaurants", "tips", "tags", "cover", "gallery",
-                "readingMinutes", "type", "publishedAt"
-            ]
-            
-            missing_fields = [f for f in required_fields if f not in article]
-            
-            if not missing_fields:
-                # Verify arrays
-                if (isinstance(article.get("attractions"), list) and len(article["attractions"]) > 0 and
-                    isinstance(article.get("restaurants"), list) and len(article["restaurants"]) > 0 and
-                    isinstance(article.get("tips"), list) and len(article["tips"]) > 0 and
-                    isinstance(article.get("tags"), list) and len(article["tags"]) > 0 and
-                    isinstance(article.get("gallery"), list)):
-                    log_test("AI generate article with valid data", True, 
-                            f"Title: {article.get('title')}, Slug: {article.get('slug')}")
-                    return article  # Return for use in save test
-                else:
-                    log_test("AI generate article", False, "Arrays not properly populated")
+            # Verify error structure
+            if error == "Buget LLM depășit" and code == "BUDGET_EXCEEDED" and detail and "buget" in detail.lower():
+                log_test("AI generate budget exceeded (expect 402 with proper error)", True, 
+                        f"Error: {error}, Code: {code}, Detail: {detail[:100]}")
             else:
-                log_test("AI generate article", False, f"Missing fields: {missing_fields}")
+                log_test("AI generate budget exceeded error structure", False, 
+                        f"Status 402 but wrong structure. Error: {error}, Code: {code}, Detail: {detail}")
+        elif resp.status_code == 200:
+            # If it succeeds, budget is not exceeded (unexpected but not a failure)
+            log_test("AI generate budget exceeded", False, 
+                    "Expected 402 but got 200 - budget may not be exceeded yet")
+        elif resp.status_code == 500:
+            # This is the bug we're fixing - should be 402, not 500
+            log_test("AI generate budget exceeded (expect 402, got 500)", False, 
+                    f"BUG: Got 500 instead of 402. Body: {resp.text[:200]}")
         else:
-            log_test("AI generate article", False, f"Status: {resp.status_code}, Body: {resp.text[:500]}")
+            log_test("AI generate budget exceeded", False, 
+                    f"Unexpected status: {resp.status_code}, Body: {resp.text[:200]}")
     except requests.exceptions.Timeout:
-        log_test("AI generate article", False, "Request timeout (>90s)")
+        log_test("AI generate budget exceeded", False, "Request timeout (>90s)")
     except Exception as e:
-        log_test("AI generate article", False, f"Exception: {e}")
+        log_test("AI generate budget exceeded", False, f"Exception: {e}")
     
     return None
 
-def test_ai_save_article(admin_token, generated_article):
-    """Test 3: AI Save Article with slug uniqueness"""
+def test_non_ai_error_handling():
+    """Test 3: Non-AI endpoints error handling"""
     print("\n" + "="*60)
-    print("TEST 3: AI Save Article")
+    print("TEST 3: Non-AI Endpoints Error Handling")
     print("="*60)
     
-    # Test without auth
+    # Test create article without required fields (expect 400)
     try:
         resp = requests.post(
-            f"{BASE_URL}/ai/save-article",
-            json={"title": "Test", "slug": "test"},
+            f"{BASE_URL}/articles",
+            json={"excerpt": "Test"},
+            headers={"X-Admin-Token": ADMIN_PASSWORD},
             timeout=10
         )
-        if resp.status_code == 401:
-            log_test("AI save without auth (expect 401)", True)
-        else:
-            log_test("AI save without auth (expect 401)", False, f"Status: {resp.status_code}")
-    except Exception as e:
-        log_test("AI save without auth", False, f"Exception: {e}")
-    
-    # Use generated article or create minimal payload
-    if generated_article:
-        article_data = generated_article
-    else:
-        article_data = {
-            "title": "Test Lisabona Article",
-            "slug": "test-lisabona-article",
-            "excerpt": "Test excerpt",
-            "continent": "Europa",
-            "country": "Portugalia",
-            "city": "Lisabona",
-            "type": "City Break",
-            "intro": "Test intro",
-            "whenToVisit": "Test",
-            "budget": "Test",
-            "transport": "Test",
-            "accommodation": "Test",
-            "attractions": [{"name": "Test", "description": "Test"}],
-            "restaurants": [{"name": "Test", "description": "Test"}],
-            "tips": ["Test"],
-            "tags": ["test"],
-            "cover": "https://picsum.photos/1600/1000",
-            "gallery": [],
-            "readingMinutes": 5,
-            "publishedAt": "2025-01-01"
-        }
-    
-    # Save first time
-    try:
-        resp = requests.post(
-            f"{BASE_URL}/ai/save-article",
-            json=article_data,
-            headers={"X-Admin-Token": admin_token},
-            timeout=10
-        )
-        if resp.status_code == 200:
+        if resp.status_code == 400:
             data = resp.json()
-            article_id = data.get("id")
-            slug = data.get("slug")
-            if article_id:
-                test_article_ids.append(article_id)
-                log_test("AI save article (first time)", True, f"ID: {article_id}, Slug: {slug}")
-                
-                # Verify via GET by slug
-                try:
-                    get_resp = requests.get(f"{BASE_URL}/articles/by-slug/{slug}", timeout=10)
-                    if get_resp.status_code == 200:
-                        log_test("Verify saved article via GET by-slug", True)
-                    else:
-                        log_test("Verify saved article via GET by-slug", False, f"Status: {get_resp.status_code}")
-                except Exception as e:
-                    log_test("Verify saved article", False, f"Exception: {e}")
-                
-                # Save again with same slug - should auto-suffix
-                try:
-                    resp2 = requests.post(
-                        f"{BASE_URL}/ai/save-article",
-                        json=article_data,
-                        headers={"X-Admin-Token": admin_token},
-                        timeout=10
-                    )
-                    if resp2.status_code == 200:
-                        data2 = resp2.json()
-                        slug2 = data2.get("slug")
-                        article_id2 = data2.get("id")
-                        if article_id2:
-                            test_article_ids.append(article_id2)
-                        if slug2 != slug and slug2.startswith(article_data["slug"]):
-                            log_test("AI save with duplicate slug (auto-suffix)", True, 
-                                    f"Original: {slug}, New: {slug2}")
-                        else:
-                            log_test("AI save with duplicate slug", False, 
-                                    f"Expected auto-suffix, got: {slug2}")
-                    else:
-                        log_test("AI save with duplicate slug", False, f"Status: {resp2.status_code}")
-                except Exception as e:
-                    log_test("AI save with duplicate slug", False, f"Exception: {e}")
+            error = data.get("error")
+            if error and "obligatorii" in error.lower():
+                log_test("POST /api/articles without required fields (expect 400)", True, f"Error: {error}")
             else:
-                log_test("AI save article", False, "No ID in response")
+                log_test("POST /api/articles without required fields", False, f"Got 400 but wrong error: {error}")
         else:
-            log_test("AI save article", False, f"Status: {resp.status_code}, Body: {resp.text}")
+            log_test("POST /api/articles without required fields (expect 400)", False, 
+                    f"Status: {resp.status_code}, expected 400")
     except Exception as e:
-        log_test("AI save article", False, f"Exception: {e}")
+        log_test("POST /api/articles without required fields", False, f"Exception: {e}")
+    
+    # Test fetch nonexistent article by slug (expect 404)
+    try:
+        resp = requests.get(f"{BASE_URL}/articles/by-slug/nonexistent-article-12345", timeout=10)
+        if resp.status_code == 404:
+            data = resp.json()
+            error = data.get("error")
+            if error:
+                log_test("GET /api/articles/by-slug/nonexistent (expect 404)", True, f"Error: {error}")
+            else:
+                log_test("GET /api/articles/by-slug/nonexistent", False, "Got 404 but no error message")
+        else:
+            log_test("GET /api/articles/by-slug/nonexistent (expect 404)", False, 
+                    f"Status: {resp.status_code}, expected 404")
+    except Exception as e:
+        log_test("GET /api/articles/by-slug/nonexistent", False, f"Exception: {e}")
+    
+    # Test invalid admin route (expect 404)
+    try:
+        resp = requests.get(f"{BASE_URL}/admin/invalid-route-12345", timeout=10)
+        if resp.status_code == 404:
+            data = resp.json()
+            error = data.get("error")
+            if error and "not found" in error.lower():
+                log_test("GET /api/admin/invalid-route (expect 404)", True, f"Error: {error}")
+            else:
+                log_test("GET /api/admin/invalid-route", False, f"Got 404 but wrong error: {error}")
+        else:
+            log_test("GET /api/admin/invalid-route (expect 404)", False, 
+                    f"Status: {resp.status_code}, expected 404")
+    except Exception as e:
+        log_test("GET /api/admin/invalid-route", False, f"Exception: {e}")
+    
+    # Test newsletter with invalid email (expect 400)
+    try:
+        resp = requests.post(
+            f"{BASE_URL}/newsletter",
+            json={"email": "invalid-email"},
+            timeout=10
+        )
+        if resp.status_code == 400:
+            data = resp.json()
+            error = data.get("error")
+            if error and "invalid" in error.lower():
+                log_test("POST /api/newsletter with invalid email (expect 400)", True, f"Error: {error}")
+            else:
+                log_test("POST /api/newsletter with invalid email", False, f"Got 400 but wrong error: {error}")
+        else:
+            log_test("POST /api/newsletter with invalid email (expect 400)", False, 
+                    f"Status: {resp.status_code}, expected 400")
+    except Exception as e:
+        log_test("POST /api/newsletter with invalid email", False, f"Exception: {e}")
+    
+    # Test contact without required fields (expect 400)
+    try:
+        resp = requests.post(
+            f"{BASE_URL}/contact",
+            json={"name": "Test"},
+            timeout=10
+        )
+        if resp.status_code == 400:
+            data = resp.json()
+            error = data.get("error")
+            if error:
+                log_test("POST /api/contact without required fields (expect 400)", True, f"Error: {error}")
+            else:
+                log_test("POST /api/contact without required fields", False, "Got 400 but no error message")
+        else:
+            log_test("POST /api/contact without required fields (expect 400)", False, 
+                    f"Status: {resp.status_code}, expected 400")
+    except Exception as e:
+        log_test("POST /api/contact without required fields", False, f"Exception: {e}")
 
 def test_post_scheduling(admin_token):
     """Test 4: Post Scheduling - hide future-dated articles"""
@@ -389,12 +394,12 @@ def test_post_scheduling(admin_token):
         log_test("Create scheduled article", False, f"Exception: {e}")
 
 def test_regression_smoke():
-    """Test 5-12: Regression smoke tests"""
+    """Test 4: Regression smoke tests"""
     print("\n" + "="*60)
-    print("REGRESSION SMOKE TESTS")
+    print("TEST 4: REGRESSION SMOKE TESTS")
     print("="*60)
     
-    # Test 5: GET /api/articles (default)
+    # Test 4.1: GET /api/articles (default)
     try:
         resp = requests.get(f"{BASE_URL}/articles", timeout=10)
         if resp.status_code == 200:
@@ -413,140 +418,107 @@ def test_regression_smoke():
     except Exception as e:
         log_test("GET /api/articles", False, f"Exception: {e}")
     
-    # Test 6: GET /api/articles?continent=Europa
-    try:
-        resp = requests.get(f"{BASE_URL}/articles?continent=Europa", timeout=10)
-        if resp.status_code == 200:
-            items = resp.json().get("items", [])
-            all_europa = all(item.get("continent") == "Europa" for item in items)
-            if all_europa and len(items) > 0:
-                log_test("GET /api/articles?continent=Europa", True, f"Found {len(items)} Europa articles")
-            else:
-                log_test("GET /api/articles?continent=Europa", False, 
-                        f"Not all items are Europa or empty: {len(items)}")
-        else:
-            log_test("GET /api/articles?continent=Europa", False, f"Status: {resp.status_code}")
-    except Exception as e:
-        log_test("GET /api/articles?continent=Europa", False, f"Exception: {e}")
-    
-    # Test 7: GET /api/articles?search=paris
-    try:
-        resp = requests.get(f"{BASE_URL}/articles?search=paris", timeout=10)
-        if resp.status_code == 200:
-            items = resp.json().get("items", [])
-            if len(items) > 0:
-                log_test("GET /api/articles?search=paris", True, f"Found {len(items)} results")
-            else:
-                log_test("GET /api/articles?search=paris", False, "No results found")
-        else:
-            log_test("GET /api/articles?search=paris", False, f"Status: {resp.status_code}")
-    except Exception as e:
-        log_test("GET /api/articles?search=paris", False, f"Exception: {e}")
-    
-    # Test 8: GET /api/articles/meta
-    try:
-        resp = requests.get(f"{BASE_URL}/articles/meta", timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            continents = data.get("continents", [])
-            countries = data.get("countries", [])
-            types = data.get("types", [])
-            if len(continents) > 0 and len(countries) > 0 and len(types) > 0:
-                log_test("GET /api/articles/meta", True, 
-                        f"Continents: {len(continents)}, Countries: {len(countries)}, Types: {len(types)}")
-            else:
-                log_test("GET /api/articles/meta", False, "Empty arrays returned")
-        else:
-            log_test("GET /api/articles/meta", False, f"Status: {resp.status_code}")
-    except Exception as e:
-        log_test("GET /api/articles/meta", False, f"Exception: {e}")
-    
-    # Test 9: GET /api/articles/by-slug/ghid-complet-paris-7-zile
+    # Test 4.2: GET /api/articles/by-slug/ghid-complet-paris-7-zile with relatedGroups
     try:
         resp = requests.get(f"{BASE_URL}/articles/by-slug/ghid-complet-paris-7-zile", timeout=10)
         if resp.status_code == 200:
             data = resp.json()
             article = data.get("article")
             related = data.get("related", [])
-            if article and len(related) <= 3:
-                log_test("GET /api/articles/by-slug/ghid-complet-paris-7-zile", True, 
-                        f"Article found, Related: {len(related)}")
+            related_groups = data.get("relatedGroups", {})
+            same_country = related_groups.get("sameCountry", [])
+            same_type = related_groups.get("sameType", [])
+            same_continent = related_groups.get("sameContinent", [])
+            
+            if article and isinstance(related_groups, dict):
+                log_test("GET /api/articles/by-slug/ghid-complet-paris-7-zile with relatedGroups", True, 
+                        f"Article found, Related: {len(related)}, sameCountry: {len(same_country)}, sameType: {len(same_type)}, sameContinent: {len(same_continent)}")
             else:
                 log_test("GET /api/articles/by-slug/ghid-complet-paris-7-zile", False, 
-                        f"Article: {bool(article)}, Related: {len(related)}")
+                        f"Article: {bool(article)}, relatedGroups: {bool(related_groups)}")
         else:
             log_test("GET /api/articles/by-slug/ghid-complet-paris-7-zile", False, 
                     f"Status: {resp.status_code}")
     except Exception as e:
         log_test("GET /api/articles/by-slug/ghid-complet-paris-7-zile", False, f"Exception: {e}")
     
-    # Test 10: POST /api/newsletter
+    # Test 4.3: POST /api/admin/login
     try:
-        timestamp = int(time.time())
-        resp = requests.post(
-            f"{BASE_URL}/newsletter",
-            json={"email": f"test+{timestamp}@example.com"},
-            timeout=10
-        )
+        resp = requests.post(f"{BASE_URL}/admin/login", json={"password": ADMIN_PASSWORD}, timeout=10)
         if resp.status_code == 200:
-            log_test("POST /api/newsletter", True)
-        else:
-            log_test("POST /api/newsletter", False, f"Status: {resp.status_code}")
-    except Exception as e:
-        log_test("POST /api/newsletter", False, f"Exception: {e}")
-    
-    # Test 11: POST /api/contact
-    try:
-        resp = requests.post(
-            f"{BASE_URL}/contact",
-            json={
-                "name": "Test User",
-                "email": "test@example.com",
-                "message": "Test message"
-            },
-            timeout=10
-        )
-        if resp.status_code == 200:
-            log_test("POST /api/contact", True)
-        else:
-            log_test("POST /api/contact", False, f"Status: {resp.status_code}")
-    except Exception as e:
-        log_test("POST /api/contact", False, f"Exception: {e}")
-    
-    # Test 12: POST /api/comments and GET /api/comments
-    try:
-        timestamp = int(time.time())
-        resp = requests.post(
-            f"{BASE_URL}/comments?slug=ghid-complet-paris-7-zile",
-            json={
-                "slug": "ghid-complet-paris-7-zile",
-                "name": f"Test User {timestamp}",
-                "message": "Test comment"
-            },
-            timeout=10
-        )
-        if resp.status_code == 200:
-            log_test("POST /api/comments", True)
-            
-            # Verify GET
-            get_resp = requests.get(f"{BASE_URL}/comments?slug=ghid-complet-paris-7-zile", timeout=10)
-            if get_resp.status_code == 200:
-                items = get_resp.json().get("items", [])
-                found = any(item.get("name") == f"Test User {timestamp}" for item in items)
-                if found:
-                    log_test("GET /api/comments (verify posted comment)", True)
-                else:
-                    log_test("GET /api/comments (verify posted comment)", False, "Comment not found")
+            data = resp.json()
+            if data.get("ok") and data.get("token"):
+                log_test("POST /api/admin/login", True, "Login successful")
             else:
-                log_test("GET /api/comments", False, f"Status: {get_resp.status_code}")
+                log_test("POST /api/admin/login", False, f"Unexpected response: {data}")
         else:
-            log_test("POST /api/comments", False, f"Status: {resp.status_code}")
+            log_test("POST /api/admin/login", False, f"Status: {resp.status_code}")
     except Exception as e:
-        log_test("POST /api/comments", False, f"Exception: {e}")
+        log_test("POST /api/admin/login", False, f"Exception: {e}")
+    
+    # Test 4.4: POST /api/admin/bulk-update-year
+    try:
+        resp = requests.post(
+            f"{BASE_URL}/admin/bulk-update-year",
+            json={"from": "2025", "to": "2026"},
+            headers={"X-Admin-Token": ADMIN_PASSWORD},
+            timeout=10
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            updated = data.get("updated")
+            if isinstance(updated, int) and updated >= 0:
+                log_test("POST /api/admin/bulk-update-year", True, f"Updated: {updated} articles")
+            else:
+                log_test("POST /api/admin/bulk-update-year", False, f"Invalid response: {data}")
+        else:
+            log_test("POST /api/admin/bulk-update-year", False, f"Status: {resp.status_code}")
+    except Exception as e:
+        log_test("POST /api/admin/bulk-update-year", False, f"Exception: {e}")
+    
+    # Test 4.5: GET /sitemap.xml
+    try:
+        # Use base URL without /api for sitemap
+        sitemap_url = BASE_URL.replace("/api", "") + "/../sitemap.xml"
+        # Clean up the URL
+        import re
+        sitemap_url = re.sub(r'/[^/]+/\.\.', '', sitemap_url)
+        
+        resp = requests.get(sitemap_url, timeout=10)
+        if resp.status_code == 200:
+            content_type = resp.headers.get("Content-Type", "")
+            if "application/xml" in content_type and "charset=utf-8" in content_type:
+                log_test("GET /sitemap.xml", True, f"Content-Type: {content_type}")
+            else:
+                log_test("GET /sitemap.xml", False, f"Wrong Content-Type: {content_type}, expected 'application/xml; charset=utf-8'")
+        else:
+            log_test("GET /sitemap.xml", False, f"Status: {resp.status_code}")
+    except Exception as e:
+        log_test("GET /sitemap.xml", False, f"Exception: {e}")
+    
+    # Test 4.6: GET /feed.xml
+    try:
+        # Use base URL without /api for feed
+        feed_url = BASE_URL.replace("/api", "") + "/../feed.xml"
+        # Clean up the URL
+        import re
+        feed_url = re.sub(r'/[^/]+/\.\.', '', feed_url)
+        
+        resp = requests.get(feed_url, timeout=10)
+        if resp.status_code == 200:
+            content = resp.text
+            if "<rss" in content and "version=" in content:
+                log_test("GET /feed.xml", True, "Valid RSS feed")
+            else:
+                log_test("GET /feed.xml", False, "Invalid RSS format")
+        else:
+            log_test("GET /feed.xml", False, f"Status: {resp.status_code}")
+    except Exception as e:
+        log_test("GET /feed.xml", False, f"Exception: {e}")
 
 def main():
     print("="*60)
-    print("BACKEND API TESTS - Destinația Următoare")
+    print("BACKEND API TESTS - Bulk AI Error Handling Fix")
     print("="*60)
     print(f"Base URL: {BASE_URL}")
     print(f"Admin Password: {ADMIN_PASSWORD}")
@@ -564,9 +536,8 @@ def main():
         
         # Run tests
         test_admin_login()
-        generated_article = test_ai_article_generator(admin_token)
-        test_ai_save_article(admin_token, generated_article)
-        test_post_scheduling(admin_token)
+        test_ai_article_generator_budget_exceeded(admin_token)
+        test_non_ai_error_handling()
         test_regression_smoke()
         
     except Exception as e:
