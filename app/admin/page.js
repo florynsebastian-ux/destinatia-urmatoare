@@ -38,6 +38,8 @@ export default function AdminPage() {
   const [bulkDuration, setBulkDuration] = useState('5 zile')
   const [bulkBudget, setBulkBudget] = useState('mediu')
   const [bulkFeatured, setBulkFeatured] = useState(false)
+  const [metaLoading, setMetaLoading] = useState(false)
+  const [metaProgress, setMetaProgress] = useState({ current: 0, total: 0, results: [] })
 
   useEffect(() => {
     const t = typeof window !== 'undefined' ? localStorage.getItem('ud_admin_token') : null
@@ -273,6 +275,59 @@ export default function AdminPage() {
     loadArticles()
   }
 
+  // Bulk regenerate meta descriptions (excerpts) via Gemini — SEO CTR booster.
+  const bulkRegenerateMeta = async (onlyWeak = true) => {
+    // Fetch full admin list (includes excerpt for length filtering)
+    let list = []
+    try {
+      const r = await fetch('/api/admin/articles', { headers: { 'X-Admin-Token': token } })
+      const d = await r.json()
+      list = d.items || []
+    } catch {
+      toast.error('Nu am putut încărca lista de articole')
+      return
+    }
+    // If "onlyWeak" filter: skip articles whose excerpt is already in the sweet spot (140-165 chars).
+    const targets = onlyWeak
+      ? list.filter((a) => !a.excerpt || a.excerpt.length < 140 || a.excerpt.length > 165)
+      : list
+    if (targets.length === 0) {
+      toast.success('Toate meta descriptions sunt deja optimizate 👍')
+      return
+    }
+    if (!confirm(`Regenerez meta descriptions pentru ${targets.length} articole. Continuă?`)) return
+
+    setMetaLoading(true)
+    setMetaProgress({ current: 0, total: targets.length, results: [] })
+    const results = []
+    for (let i = 0; i < targets.length; i++) {
+      const art = targets[i]
+      setMetaProgress({ current: i + 1, total: targets.length, results })
+      try {
+        const r = await fetch('/api/admin/regen-meta', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+          body: JSON.stringify({ id: art.id }),
+        })
+        const raw = await r.text()
+        let d = null
+        try { d = JSON.parse(raw) } catch { d = null }
+        if (r.ok && d?.ok) {
+          results.push({ title: art.title, slug: art.slug, status: 'success', excerpt: d.excerpt, length: d.length, oldLength: (art.excerpt || '').length })
+        } else {
+          results.push({ title: art.title, slug: art.slug, status: 'error', error: d?.detail || d?.error || `HTTP ${r.status}` })
+        }
+      } catch (e) {
+        results.push({ title: art.title, slug: art.slug, status: 'error', error: 'Eroare rețea: ' + (e.message || 'necunoscută') })
+      }
+    }
+    setMetaProgress({ current: targets.length, total: targets.length, results })
+    setMetaLoading(false)
+    const ok = results.filter((r) => r.status === 'success').length
+    toast.success(`Gata! ${ok}/${results.length} meta descriptions regenerate`)
+    loadArticles()
+  }
+
   if (!token) {
     return (
       <div className="pt-32 pb-20 min-h-screen flex items-center justify-center bg-gradient-to-br from-cyan-50 via-white to-sky-50">
@@ -336,6 +391,9 @@ export default function AdminPage() {
               </Button>
               <Button onClick={() => setView('bulk')} className="bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white">
                 <Sparkles className="w-4 h-4 mr-2" />Bulk AI (5+ articole)
+              </Button>
+              <Button onClick={() => setView('meta')} variant="outline" className="border-emerald-500 text-emerald-700 hover:bg-emerald-50">
+                <Sparkles className="w-4 h-4 mr-2" />Regen Meta SEO
               </Button>
               <Button onClick={() => setView('ai')} className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white">
                 <Sparkles className="w-4 h-4 mr-2" />Generează cu AI
@@ -526,6 +584,103 @@ export default function AdminPage() {
 
               {!bulkLoading && (
                 <Button onClick={() => { setBulkProgress({ current: 0, total: 0, results: [] }); setBulkCities(''); setView('list') }} className="mt-6 w-full">
+                  Înapoi la lista articole
+                </Button>
+              )}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {view === 'meta' && (
+        <Card className="p-8 max-w-3xl mx-auto bg-gradient-to-br from-emerald-50 via-white to-teal-50 border-emerald-200">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="font-display text-2xl font-bold flex items-center gap-2">
+                <Sparkles className="w-6 h-6 text-emerald-500" />
+                Regenerează Meta Descriptions SEO
+              </h2>
+              <p className="text-sm text-slate-600 mt-1">Optimizează CTR-ul în Google — 150-160 caractere, cu CTA și cuvinte cheie relevante.</p>
+            </div>
+            <Button variant="ghost" onClick={() => { setView('list'); setMetaProgress({ current: 0, total: 0, results: [] }) }} disabled={metaLoading}>
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+
+          {!metaLoading && metaProgress.results.length === 0 && (
+            <div className="space-y-4">
+              <div className="rounded-xl bg-emerald-50/60 border border-emerald-200 p-5 text-sm text-slate-700 space-y-2">
+                <p className="font-semibold text-emerald-900">💡 Cum funcționează:</p>
+                <ul className="space-y-1 pl-4 list-disc marker:text-emerald-500">
+                  <li>Gemini AI regenerează câmpul <code className="bg-white px-1 rounded">excerpt</code> pentru fiecare articol.</li>
+                  <li>Formatul optim: <strong>150-160 caractere</strong> (zona verde Google), cu emoji opțional și CTA subtil.</li>
+                  <li>Modul <strong>"Doar cele slabe"</strong> sare peste articolele care au deja meta bună (140-165 char).</li>
+                  <li>Impactul: <strong>CTR mai mare</strong> în Google → mai multe click-uri → boost în ranking (Google învață că oamenii dau click).</li>
+                </ul>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-3">
+                <Button
+                  onClick={() => bulkRegenerateMeta(true)}
+                  className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white h-14"
+                >
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  Doar meta slabe (recomandat)
+                </Button>
+                <Button
+                  onClick={() => bulkRegenerateMeta(false)}
+                  variant="outline"
+                  className="border-emerald-500 text-emerald-700 hover:bg-emerald-50 h-14"
+                >
+                  Regen TOATE articolele
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {(metaLoading || metaProgress.results.length > 0) && (
+            <div>
+              <div className="mb-4">
+                <div className="flex items-center justify-between text-sm mb-2">
+                  <span className="font-semibold text-slate-700">
+                    {metaLoading ? `Procesez ${metaProgress.current}/${metaProgress.total}...` : `Gata! ${metaProgress.results.filter((r) => r.status === 'success').length}/${metaProgress.results.length} reușite`}
+                  </span>
+                  {!metaLoading && (
+                    <span className="text-xs text-slate-500">Ø lungime medie: {Math.round((metaProgress.results.filter((r) => r.length).reduce((s, r) => s + r.length, 0) / Math.max(1, metaProgress.results.filter((r) => r.length).length)))} car.</span>
+                  )}
+                </div>
+                <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all"
+                    style={{ width: `${(metaProgress.current / Math.max(1, metaProgress.total)) * 100}%` }}
+                  />
+                </div>
+              </div>
+              <div className="max-h-96 overflow-y-auto space-y-2">
+                {metaProgress.results.map((r, i) => (
+                  <div key={i} className={`p-3 rounded-lg border ${r.status === 'success' ? 'bg-emerald-50/50 border-emerald-200' : 'bg-rose-50/50 border-rose-200'}`}>
+                    <div className="flex items-start gap-2">
+                      <span className="flex-shrink-0 mt-0.5">{r.status === 'success' ? '✅' : '❌'}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-sm text-slate-900 truncate">{r.title}</p>
+                        {r.status === 'success' ? (
+                          <>
+                            <p className="text-xs text-slate-600 mt-1 leading-snug">{r.excerpt}</p>
+                            <p className="text-[10px] text-emerald-700 mt-1 font-mono">
+                              {r.oldLength || 0} → <strong>{r.length}</strong> caractere
+                              {r.length >= 140 && r.length <= 165 ? ' 🎯 optim' : r.length < 140 ? ' ⚠️ scurt' : ' ⚠️ lung'}
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-xs text-rose-700 mt-1">{r.error}</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {!metaLoading && (
+                <Button onClick={() => { setMetaProgress({ current: 0, total: 0, results: [] }); setView('list') }} className="mt-6 w-full">
                   Înapoi la lista articole
                 </Button>
               )}

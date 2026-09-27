@@ -14,6 +14,7 @@ import BookingCTA from '@/components/booking-cta'
 import FlightsCTA from '@/components/flights-cta'
 import ReadingProgress from '@/components/reading-progress'
 import RelatedSections from '@/components/related-sections'
+import { buildLinkMap, autoLink } from '@/lib/auto-link'
 
 async function getArticle(slug) {
   try {
@@ -72,6 +73,13 @@ export default async function ArticlePage({ params }) {
   const relatedGroups = data.relatedGroups || {}
   const base = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.destinatiaurmatoare.eu'
   const articleUrl = `${base}/blog/${a.slug}`
+
+  // Build internal-link map from all other articles. `usedKeywords` is shared across
+  // every autoLink() call on this page so each keyword becomes a link ONCE per article
+  // (avoids Google over-optimization penalty and looks natural).
+  const linkMap = buildLinkMap(data.linkTargets || [], a.slug)
+  const usedKeywords = new Set()
+  const AL = (t) => autoLink(t, linkMap, usedKeywords)
 
   // Approximate word count for SEO (Google likes wordCount on Articles)
   const wordCount =
@@ -322,7 +330,7 @@ export default async function ArticlePage({ params }) {
 
             {a.intro && (
               <section id="introducere">
-                {a.intro.split('\n\n').map((p, i) => <p key={i}>{p}</p>)}
+                {a.intro.split('\n\n').map((p, i) => <p key={i}>{AL(p)}</p>)}
                 <WeatherWidget city={a.city} country={a.country} />
               </section>
             )}
@@ -330,21 +338,21 @@ export default async function ArticlePage({ params }) {
             {a.whenToVisit && (
               <section id="cand-sa-vizitezi">
                 <h2 className="flex items-center gap-3"><Calendar className="w-7 h-7 text-cyan-600" />Când să vizitezi</h2>
-                <p>{a.whenToVisit}</p>
+                <p>{AL(a.whenToVisit)}</p>
               </section>
             )}
 
             {a.budget && (
               <section id="buget">
                 <h2 className="flex items-center gap-3"><Wallet className="w-7 h-7 text-cyan-600" />Buget estimativ</h2>
-                <p>{a.budget}</p>
+                <p>{AL(a.budget)}</p>
               </section>
             )}
 
             {a.transport && (
               <section id="transport">
                 <h2 className="flex items-center gap-3"><Plane className="w-7 h-7 text-cyan-600" />Transport</h2>
-                <p>{a.transport}</p>
+                <p>{AL(a.transport)}</p>
                 {/* Booking.com Flights affiliate CTA */}
                 <FlightsCTA city={a.city} country={a.country} />
               </section>
@@ -353,7 +361,7 @@ export default async function ArticlePage({ params }) {
             {a.accommodation && (
               <section id="cazare">
                 <h2 className="flex items-center gap-3"><Bed className="w-7 h-7 text-cyan-600" />Cazare recomandată</h2>
-                <p>{a.accommodation}</p>
+                <p>{AL(a.accommodation)}</p>
                 {/* Booking.com affiliate CTA — deep-linked to this destination */}
                 <BookingCTA city={a.city} country={a.country} />
               </section>
@@ -369,7 +377,7 @@ export default async function ArticlePage({ params }) {
                         <span className="w-7 h-7 rounded-full bg-cyan-500 text-white flex items-center justify-center text-sm font-bold">{i + 1}</span>
                         {att.name}
                       </h3>
-                      <p className="text-slate-700 text-sm leading-relaxed">{att.description}</p>
+                      <p className="text-slate-700 text-sm leading-relaxed">{AL(att.description)}</p>
                     </div>
                   ))}
                 </div>
@@ -383,7 +391,7 @@ export default async function ArticlePage({ params }) {
                   {a.restaurants.map((r, i) => (
                     <div key={i} className="bg-white border border-slate-200 rounded-xl p-5 hover:border-cyan-300 transition-colors">
                       <h3 className="font-display font-bold text-slate-900 text-lg mb-1">🍴 {r.name}</h3>
-                      <p className="text-slate-600 text-sm">{r.description}</p>
+                      <p className="text-slate-600 text-sm">{AL(r.description)}</p>
                     </div>
                   ))}
                 </div>
@@ -397,7 +405,7 @@ export default async function ArticlePage({ params }) {
                   {a.tips.map((t, i) => (
                     <li key={i} className="flex gap-3 bg-amber-50/50 border border-amber-100 rounded-xl p-4">
                       <span className="text-amber-500 flex-shrink-0 mt-0.5">💡</span>
-                      <span className="text-slate-700 leading-relaxed">{t}</span>
+                      <span className="text-slate-700 leading-relaxed">{AL(t)}</span>
                     </li>
                   ))}
                 </ul>

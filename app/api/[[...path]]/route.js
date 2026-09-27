@@ -157,6 +157,13 @@ async function handleRoute(request, { params }) {
       // Flat "related" (top 3 for backward-compat)
       const related = [...sameCountry, ...sameType, ...sameContinent].slice(0, 3)
 
+      // Compact list of ALL articles (slug + city + country) for auto-linking.
+      // Kept small: only needed fields, no cover/excerpt/etc.
+      const allForLinks = await db.collection('articles')
+        .find({ ...excludeSelf })
+        .project({ slug: 1, city: 1, country: 1 })
+        .toArray()
+
       return handleCORS(NextResponse.json({
         article: clean(doc),
         related: related.map(clean),
@@ -165,6 +172,7 @@ async function handleRoute(request, { params }) {
           sameType: sameType.slice(0, 4).map(clean),
           sameContinent: sameContinent.slice(0, 4).map(clean),
         },
+        linkTargets: allForLinks.map((x) => ({ slug: x.slug, city: x.city || '', country: x.country || '' })),
       }))
     }
 
@@ -309,6 +317,83 @@ async function handleRoute(request, { params }) {
       return handleCORS(NextResponse.json({ ok: true, updated, total: all.length }))
     }
 
+    // ADMIN: LIST ARTICLES (id + slug + title + excerpt) — used by "Regenerate meta" batch
+    if (route === '/admin/articles' && method === 'GET') {
+      if (!isAuth(request)) return handleCORS(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
+      const docs = await db.collection('articles').find({}).project({
+        id: 1, slug: 1, title: 1, excerpt: 1, city: 1, country: 1, type: 1, tags: 1,
+      }).toArray()
+      return handleCORS(NextResponse.json({ items: docs.map(clean) }))
+    }
+
+    // ADMIN: REGENERATE META DESCRIPTION (single article) via Gemini
+    if (route === '/admin/regen-meta' && method === 'POST') {
+      if (!isAuth(request)) return handleCORS(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
+      const body = await request.json()
+      const { id } = body
+      if (!id) return handleCORS(NextResponse.json({ error: 'id obligatoriu' }, { status: 400 }))
+      const doc = await db.collection('articles').findOne({ id })
+      if (!doc) return handleCORS(NextResponse.json({ error: 'Not found' }, { status: 404 }))
+
+      const kw = [doc.city, doc.country, doc.type].filter(Boolean).join(', ')
+      const prompt = `Scrie o META DESCRIPTION SEO-optimizată pentru un articol de blog de călătorii în limba română:
+
+Titlu: ${doc.title}
+Destinație: ${kw}
+Tags: ${(doc.tags || []).slice(0, 5).join(', ')}
+Excerpt actual: ${doc.excerpt || '(niciunul)'}
+
+REGULI STRICTE:
+- Exact 150-160 caractere (contorizează spațiile!)
+- Include cuvântul cheie principal (orașul/țara)
+- Începe cu un beneficiu sau curiozitate (nu cu "Acest articol...")
+- Include un CTA subtil la final (ex: "Descoperă mai mult", "Ghid complet", "Află tot")
+- Poate include maxim UN emoji relevant (✈️ 🌍 🏛️ 🍕 etc.) la început sau final
+- Tonul: prietenos, informativ, ca un travel blogger român
+- Diacritice corecte (ă â î ș ț)
+- NU folosi ghilimele
+- Răspunde DOAR cu textul meta descriptionului, fără alt text sau explicații.`
+
+      let newExcerpt = null
+      const geminiKey = process.env.GEMINI_API_KEY
+      if (geminiKey) {
+        const { GoogleGenerativeAI } = await import('@google/generative-ai')
+        const genAI = new GoogleGenerativeAI(geminiKey)
+        // Try newest first, fallback to stable models for higher success rate.
+        const models = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.0-flash']
+        for (const modelName of models) {
+          try {
+            const model = genAI.getGenerativeModel({
+              model: modelName,
+              generationConfig: { temperature: 0.8, maxOutputTokens: 200 },
+            })
+            const result = await Promise.race([
+              model.generateContent(prompt),
+              new Promise((_, rej) => setTimeout(() => rej(new Error('GEMINI_TIMEOUT_15s')), 15000)),
+            ])
+            newExcerpt = result.response.text().trim().replace(/^["']|["']$/g, '').replace(/\s+/g, ' ')
+            if (newExcerpt.length > 165) {
+              newExcerpt = newExcerpt.slice(0, 162).replace(/\s+\S*$/, '') + '…'
+            }
+            if (newExcerpt && newExcerpt.length >= 60) break // success
+          } catch (e) {
+            console.error(`Regen meta ${modelName} failed:`, e.message)
+            newExcerpt = null
+          }
+        }
+      }
+
+      if (!newExcerpt || newExcerpt.length < 60) {
+        return handleCORS(NextResponse.json({ error: 'Nu s-a putut genera meta description', detail: 'Gemini indisponibil sau răspuns prea scurt.' }, { status: 500 }))
+      }
+
+      await db.collection('articles').updateOne(
+        { id },
+        { $set: { excerpt: newExcerpt, updatedAt: new Date().toISOString() } }
+      )
+      return handleCORS(NextResponse.json({ ok: true, excerpt: newExcerpt, length: newExcerpt.length }))
+    }
+
     // AI ARTICLE GENERATOR: POST /api/ai/generate-article
     if (route === '/ai/generate-article' && method === 'POST') {
       if (!isAuth(request)) return handleCORS(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
@@ -383,8 +468,9 @@ IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau dup�
       let providerUsed = 'none'
 
       const geminiKey = process.env.GEMINI_API_KEY
-      // Try Gemini with retry on transient 503 (high demand)
-      const geminiModels = ['gemini-3.8-flash']
+      // Try Gemini with retry on transient 503 (high demand).
+      // Fallback chain: newest model first, then stable older ones for reliability.
+      const geminiModels = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.0-flash']
 
       if (geminiKey) {
         const { GoogleGenerativeAI } = await import('@google/generative-ai')
