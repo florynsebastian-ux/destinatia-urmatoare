@@ -395,6 +395,30 @@ export default function AdminPage() {
               <Button onClick={() => setView('meta')} variant="outline" className="border-emerald-500 text-emerald-700 hover:bg-emerald-50">
                 <Sparkles className="w-4 h-4 mr-2" />Regen Meta SEO
               </Button>
+              <Button
+                onClick={async () => {
+                  if (!confirm('Trimit ping la Bing, Yandex și DuckDuckGo pentru TOATE articolele.\nContinuă?')) return
+                  try {
+                    const r = await fetch('/api/admin/indexnow-ping-all', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+                    })
+                    const d = await r.json()
+                    if (d.ok) {
+                      toast.success(d.message || `✅ ${d.count} URL-uri notificate`)
+                    } else {
+                      toast.error(d.message || d.error || 'Eroare IndexNow')
+                    }
+                  } catch (e) {
+                    toast.error('Eroare rețea: ' + e.message)
+                  }
+                }}
+                variant="outline"
+                className="border-blue-500 text-blue-700 hover:bg-blue-50"
+                title="Notifică Bing, Yandex, DuckDuckGo (Google nu suportă IndexNow)"
+              >
+                🔔 Ping IndexNow
+              </Button>
               <Button onClick={() => setView('ai')} className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white">
                 <Sparkles className="w-4 h-4 mr-2" />Generează cu AI
               </Button>

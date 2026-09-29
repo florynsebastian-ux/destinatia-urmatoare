@@ -3,6 +3,13 @@ import { v4 as uuidv4 } from 'uuid'
 import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { DEMO_ARTICLES } from '@/lib/seed-data'
+import { pingIndexNowAsync, pingIndexNow } from '@/lib/index-now'
+
+// Helper: build a full absolute URL for an article slug (for IndexNow)
+const articleUrl = (slug) => {
+  const base = (process.env.NEXT_PUBLIC_BASE_URL || 'https://www.destinatiaurmatoare.eu').replace(/\/+$/, '')
+  return `${base}/blog/${slug}`
+}
 
 // Vercel: allow up to 60s for LLM generation
 export const maxDuration = 60
@@ -75,6 +82,20 @@ async function handleRoute(request, { params }) {
 
     if (route === '/' && method === 'GET') {
       return handleCORS(NextResponse.json({ message: 'Destinația Următoare API up' }))
+    }
+
+    // INDEXNOW verification file (served as text) — Bing/Yandex/DDG check this
+    // when we ping them to verify domain ownership.
+    if (route === '/indexnow-key' && method === 'GET') {
+      const key = process.env.INDEXNOW_KEY
+      if (!key) return new NextResponse('Not configured', { status: 404 })
+      return new NextResponse(key, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Cache-Control': 'public, max-age=86400',
+        },
+      })
     }
 
     // ARTICLES LIST: GET /api/articles?continent=&country=&type=&search=&page=&limit=
@@ -213,6 +234,8 @@ async function handleRoute(request, { params }) {
         updatedAt: new Date(),
       }
       await db.collection('articles').insertOne(doc)
+      // Fire-and-forget: notify Bing/Yandex/DDG that a new URL exists
+      pingIndexNowAsync(articleUrl(doc.slug))
       return handleCORS(NextResponse.json(clean(doc)))
     }
 
@@ -224,6 +247,8 @@ async function handleRoute(request, { params }) {
       body.updatedAt = new Date()
       await db.collection('articles').updateOne({ id: path[1] }, { $set: body })
       const updated = await db.collection('articles').findOne({ id: path[1] })
+      // Fire-and-forget: notify search engines the URL was updated
+      if (updated?.slug) pingIndexNowAsync(articleUrl(updated.slug))
       return handleCORS(NextResponse.json(clean(updated)))
     }
 
@@ -392,6 +417,36 @@ REGULI STRICTE:
         { $set: { excerpt: newExcerpt, updatedAt: new Date().toISOString() } }
       )
       return handleCORS(NextResponse.json({ ok: true, excerpt: newExcerpt, length: newExcerpt.length }))
+    }
+
+    // ADMIN: BULK INDEXNOW PING — notify Bing/Yandex/DDG about ALL articles at once
+    if (route === '/admin/indexnow-ping-all' && method === 'POST') {
+      if (!isAuth(request)) return handleCORS(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
+      const all = await db.collection('articles').find({}).project({ slug: 1 }).toArray()
+      const urls = all.map((a) => articleUrl(a.slug))
+      // Also include a few high-value static pages
+      const base = (process.env.NEXT_PUBLIC_BASE_URL || 'https://www.destinatiaurmatoare.eu').replace(/\/+$/, '')
+      urls.push(base + '/', base + '/blog', base + '/travel-tips', base + '/despre')
+      // Await (not fire-and-forget) — user is watching for the result in admin UI
+      const res = await pingIndexNow(urls)
+      // Special case: 422 on preview domains (emergentagent.com, vercel.app) — IndexNow only
+      // accepts real production domains. Detect and give a friendlier message.
+      const isPreview = base.includes('emergentagent.com') || base.includes('vercel.app') || base.includes('localhost')
+      let message
+      if (res.ok) {
+        message = `✅ Notificate ${res.count} URL-uri (Bing, Yandex, DuckDuckGo). Google se bazează pe sitemap — deja submis în GSC.`
+      } else if (res.status === 422 && isPreview) {
+        message = '⚠️ IndexNow acceptă doar domeniul de producție (nu preview). Va funcționa după deploy pe www.destinatiaurmatoare.eu.'
+      } else {
+        message = `⚠️ ${res.error || `Status ${res.status}`}`
+      }
+      return handleCORS(NextResponse.json({
+        ok: res.ok,
+        count: res.count,
+        status: res.status,
+        error: res.error,
+        message,
+      }))
     }
 
     // AI ARTICLE GENERATOR: POST /api/ai/generate-article
@@ -632,6 +687,8 @@ IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau dup�
       delete doc.coverImageQuery
       delete doc.galleryImageQueries
       await db.collection('articles').insertOne(doc)
+      // Fire-and-forget: notify Bing/Yandex/DDG about the new AI-generated article
+      pingIndexNowAsync(articleUrl(doc.slug))
       return handleCORS(NextResponse.json(clean(doc)))
     }
 
