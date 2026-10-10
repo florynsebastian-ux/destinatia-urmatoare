@@ -9,7 +9,7 @@ async function getAuthorArticles(authorName) {
   try {
     // Fetch first 100 articles then filter server-side.
     // (Simpler than adding a new API endpoint; count of articles per author is small.)
-    const r = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL}/api/articles?limit=100`, { cache: 'no-store' })
+    const r = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL}/api/articles?limit=100`, { next: { revalidate: 300 } })
     if (!r.ok) return []
     const d = await r.json()
     return (d.items || []).filter(a => String(a.author || '').toLowerCase().includes(authorName.toLowerCase()))

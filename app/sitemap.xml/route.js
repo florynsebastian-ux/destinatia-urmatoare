@@ -12,8 +12,7 @@ const escapeXml = (str = '') =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;')
 
-export const dynamic = 'force-dynamic'
-export const revalidate = 0
+export const revalidate = 3600
 
 export async function GET() {
   const base = (process.env.NEXT_PUBLIC_BASE_URL || 'https://www.destinatiaurmatoare.eu').replace(/\/$/, '')
@@ -32,7 +31,7 @@ export async function GET() {
 
   let articles = []
   try {
-    const r = await fetch(`${base}/api/articles?limit=200`, { cache: 'no-store' })
+    const r = await fetch(`${base}/api/articles?limit=200`, { next: { revalidate: 3600 } })
     if (r.ok) {
       const d = await r.json()
       articles = d.items || []

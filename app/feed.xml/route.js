@@ -9,11 +9,13 @@ const escapeXml = (str = '') =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;')
 
+export const revalidate = 3600
+
 export async function GET() {
   const base = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.destinatiaurmatoare.eu'
   let items = []
   try {
-    const r = await fetch(`${base}/api/articles?limit=30`, { cache: 'no-store' })
+    const r = await fetch(`${base}/api/articles?limit=30`, { next: { revalidate: 3600 } })
     if (r.ok) {
       const d = await r.json()
       items = d.items || []

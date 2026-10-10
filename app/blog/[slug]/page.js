@@ -18,7 +18,7 @@ import { buildLinkMap, autoLink } from '@/lib/auto-link'
 
 async function getArticle(slug) {
   try {
-    const r = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL}/api/articles/by-slug/${slug}`, { cache: 'no-store' })
+    const r = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL}/api/articles/by-slug/${slug}`, { next: { revalidate: 300 } })
     if (!r.ok) return null
     return r.json()
   } catch {
