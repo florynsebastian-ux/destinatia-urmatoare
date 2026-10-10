@@ -22,9 +22,15 @@ function BlogContent() {
   const [total, setTotal] = useState(0)
 
   const [search, setSearch] = useState(sp.get('search') || '')
+  const [debouncedSearch, setDebouncedSearch] = useState(sp.get('search') || '')
   const [continent, setContinent] = useState(sp.get('continent') || 'all')
   const [country, setCountry] = useState(sp.get('country') || 'all')
   const [type, setType] = useState(sp.get('type') || 'all')
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 250)
+    return () => clearTimeout(timer)
+  }, [search])
 
   useEffect(() => {
     fetch('/api/articles/meta').then((r) => r.json()).then(setMeta)
@@ -33,7 +39,7 @@ function BlogContent() {
   useEffect(() => {
     setLoading(true)
     const qs = new URLSearchParams()
-    if (search) qs.set('search', search)
+    if (debouncedSearch) qs.set('search', debouncedSearch)
     if (continent !== 'all') qs.set('continent', continent)
     if (country !== 'all') qs.set('country', country)
     if (type !== 'all') qs.set('type', type)
@@ -51,14 +57,14 @@ function BlogContent() {
 
     // Update URL
     const urlParams = new URLSearchParams()
-    if (search) urlParams.set('search', search)
+    if (debouncedSearch) urlParams.set('search', debouncedSearch)
     if (continent !== 'all') urlParams.set('continent', continent)
     if (country !== 'all') urlParams.set('country', country)
     if (type !== 'all') urlParams.set('type', type)
     if (page > 1) urlParams.set('page', String(page))
     const url = urlParams.toString() ? '/blog?' + urlParams.toString() : '/blog'
     router.replace(url, { scroll: false })
-  }, [search, continent, country, type, page, router])
+  }, [debouncedSearch, continent, country, type, page, router])
 
   const reset = () => {
     setSearch('')
