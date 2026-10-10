@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { Search, X, MapPin, ArrowRight } from 'lucide-react'
 
@@ -101,7 +102,16 @@ export default function SmartSearch({ variant = 'header' }) {
                       onClick={close}
                       className="flex items-center gap-4 px-5 py-3 hover:bg-cyan-50 transition-colors"
                     >
-                      <img src={r.cover} alt="" className="w-14 h-14 rounded-lg object-cover flex-shrink-0" />
+                      <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg">
+                        <Image
+                          src={r.cover}
+                          alt={r.title}
+                          fill
+                          sizes="56px"
+                          className="object-cover"
+                          loading="lazy"
+                        />
+                      </div>
                       <div className="flex-1 min-w-0">
                         <div className="font-semibold text-slate-900 truncate">{r.title}</div>
                         <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">

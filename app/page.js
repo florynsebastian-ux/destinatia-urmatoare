@@ -9,7 +9,7 @@ async function getArticles(opts = {}) {
   const params = new URLSearchParams(opts).toString()
   const url = `${process.env.NEXT_PUBLIC_BASE_URL}/api/articles${params ? '?' + params : ''}`
   try {
-    const r = await fetch(url, { cache: 'no-store' })
+    const r = await fetch(url, { next: { revalidate: 300 } })
     if (!r.ok) return { items: [] }
     return r.json()
   } catch {
