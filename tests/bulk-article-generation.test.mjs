@@ -86,6 +86,30 @@ test('budget exhaustion marks remaining cities as skipped', async () => {
   ])
 })
 
+test('retries a generation timeout once and reports a clear message if it persists', async () => {
+  let calls = 0
+  const results = await generateAndSaveBulkArticles({
+    lines: ['Hanoi'],
+    defaults: { duration: '5 zile', type: 'City Break', budget: 'mediu' },
+    featured: false,
+    token: 'token',
+    fetchImpl: async () => {
+      calls++
+      return response(504, {
+        code: 'AI_TIMEOUT',
+        detail: 'Serviciul AI a răspuns prea lent. Încearcă din nou acest oraș; lotul va continua.',
+      })
+    },
+    sleep: async () => {},
+  })
+
+  assert.equal(calls, 2)
+  assert.equal(results.length, 1)
+  assert.equal(results[0].city, 'Hanoi')
+  assert.match(results[0].error, /Timeout server după reîncercare/)
+  assert.equal(results[0].code, 'AI_TIMEOUT')
+})
+
 test('repeated network failures produce one visible failure and do not abort the batch', async () => {
   const results = await generateAndSaveBulkArticles({
     lines: ['Braga', 'Coimbra'],

@@ -521,21 +521,8 @@ IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau dup�
       // ============================================================
       let data = null
       let providerUsed = 'none'
-      const generationDeadline = Date.now() + 30000
+      const generationDeadline = Date.now() + 45000
       const remainingGenerationTime = () => Math.max(0, generationDeadline - Date.now())
-      const runWithTimeout = async (operation, timeoutMs) => {
-        let timeout
-        try {
-          return await Promise.race([
-            operation,
-            new Promise((_, reject) => {
-              timeout = setTimeout(() => reject(new Error('AI_GENERATION_TIMEOUT')), timeoutMs)
-            }),
-          ])
-        } finally {
-          clearTimeout(timeout)
-        }
-      }
 
       const geminiKey = process.env.GEMINI_API_KEY
       // Try Gemini with retry on transient 503 (high demand).
@@ -560,7 +547,9 @@ IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau dup�
                   responseSchema: articleSchema,
                 },
               })
-              const result = await runWithTimeout(model.generateContent(userPrompt), Math.min(12000, remaining))
+              const result = await model.generateContent(userPrompt, {
+                signal: AbortSignal.timeout(Math.min(30000, remaining)),
+              })
               const text = result.response.text()
               data = JSON.parse(text)
               providerUsed = `gemini/${modelName}`
@@ -602,7 +591,7 @@ IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau dup�
             },
           }],
           tool_choice: { type: 'function', function: { name: 'create_travel_guide' } },
-        }, { timeout: Math.min(15000, remainingGenerationTime()) })
+        }, { timeout: Math.min(25000, remainingGenerationTime()) })
         const toolCall = completion.choices?.[0]?.message?.tool_calls?.[0]
         if (toolCall?.function?.arguments) {
           data = JSON.parse(toolCall.function.arguments)
@@ -734,6 +723,13 @@ IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau dup�
         detail: 'Așteaptă câteva minute înainte să încerci din nou.',
         code: 'RATE_LIMITED',
       }, { status: 429 }))
+    }
+    if (/timed?\s*out|timeout|aborted/i.test(msg)) {
+      return handleCORS(NextResponse.json({
+        error: 'Serviciul AI a răspuns prea lent',
+        detail: 'Cererea către furnizorul AI a expirat. Încearcă din nou acest oraș; lotul va continua.',
+        code: 'AI_TIMEOUT',
+      }, { status: 504 }))
     }
     return handleCORS(NextResponse.json({ error: 'Internal server error', detail: error.message }, { status: 500 }))
   }
