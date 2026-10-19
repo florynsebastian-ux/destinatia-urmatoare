@@ -1,9 +1,9 @@
 import { MongoClient } from 'mongodb'
 import { v4 as uuidv4 } from 'uuid'
 import { NextResponse } from 'next/server'
-import OpenAI from 'openai'
 import { DEMO_ARTICLES } from '@/lib/seed-data'
 import { pingIndexNowAsync, pingIndexNow } from '@/lib/index-now'
+import { classifyGeminiError } from '@/lib/gemini-error.mjs'
 
 // Helper: build a full absolute URL for an article slug (for IndexNow)
 const articleUrl = (slug) => {
@@ -351,6 +351,14 @@ async function handleRoute(request, { params }) {
       return handleCORS(NextResponse.json({ items: docs.map(clean) }))
     }
 
+    if (route === '/admin/ai-status' && method === 'GET') {
+      if (!isAuth(request)) return handleCORS(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
+      return handleCORS(NextResponse.json({
+        provider: 'Google Gemini',
+        configured: Boolean(process.env.GEMINI_API_KEY),
+      }))
+    }
+
     // ADMIN: REGENERATE META DESCRIPTION (single article) via Gemini
     if (route === '/admin/regen-meta' && method === 'POST') {
       if (!isAuth(request)) return handleCORS(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
@@ -516,8 +524,7 @@ IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau dup�
       }
 
       // ============================================================
-      // Call Google Gemini API (free tier: 1500 requests/day)
-      // Falls back to Emergent LLM Gateway if Gemini fails or no key.
+      // Generate directly with Google Gemini; no paid intermediary fallback.
       // ============================================================
       let data = null
       let providerUsed = 'none'
@@ -525,92 +532,60 @@ IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau dup�
       const remainingGenerationTime = () => Math.max(0, generationDeadline - Date.now())
 
       const geminiKey = process.env.GEMINI_API_KEY
-      // Try Gemini with retry on transient 503 (high demand).
-      // Fallback chain: newest model first, then stable older ones for reliability.
-      const geminiModels = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.0-flash']
+      if (!geminiKey) {
+        return handleCORS(NextResponse.json({
+          error: 'Generatorul Google AI nu este configurat',
+          detail: 'Adaugă GEMINI_API_KEY în variabilele Production din Vercel și redeployează.',
+          code: 'AI_PROVIDER_NOT_CONFIGURED',
+        }, { status: 503 }))
+      }
 
-      if (geminiKey) {
-        const { GoogleGenerativeAI } = await import('@google/generative-ai')
-        const genAI = new GoogleGenerativeAI(geminiKey)
-        outer: for (const modelName of geminiModels) {
-          for (let attempt = 1; attempt <= 2; attempt++) {
-            const remaining = remainingGenerationTime()
-            if (!remaining) break outer
-            try {
-              const model = genAI.getGenerativeModel({
-                model: modelName,
-                systemInstruction,
-                generationConfig: {
-                  temperature: 0.7,
-                  maxOutputTokens: 4096,
-                  responseMimeType: 'application/json',
-                  responseSchema: articleSchema,
-                },
-              })
-              const result = await model.generateContent(userPrompt, {
-                signal: AbortSignal.timeout(Math.min(30000, remaining)),
-              })
-              const text = result.response.text()
-              data = JSON.parse(text)
-              providerUsed = `gemini/${modelName}`
-              break outer // success
-            } catch (e) {
-              const msg = String(e.message || '').slice(0, 200)
-              console.error(`Gemini ${modelName} attempt ${attempt}:`, msg)
-              // Retry only on 503 (overload); other errors → next model
-              if (msg.includes('503') && attempt < 2 && remainingGenerationTime() > 1200) {
-                await new Promise(r => setTimeout(r, 1200)) // single short backoff
-                continue
-              }
-              break // next model
-            }
+      const { GoogleGenerativeAI } = await import('@google/generative-ai')
+      const genAI = new GoogleGenerativeAI(geminiKey)
+      let lastGeminiError
+      // Use stable, widely available Flash models; try the backup only if the
+      // primary model is unavailable, not when the account quota is exhausted.
+      const geminiModels = ['gemini-2.5-flash', 'gemini-2.0-flash']
+
+      for (const modelName of geminiModels) {
+        if (!remainingGenerationTime()) break
+        try {
+          const model = genAI.getGenerativeModel({
+            model: modelName,
+            systemInstruction,
+            generationConfig: {
+              temperature: 0.7,
+              maxOutputTokens: 4096,
+              responseMimeType: 'application/json',
+              responseSchema: articleSchema,
+            },
+          })
+          const result = await model.generateContent(userPrompt, {
+            signal: AbortSignal.timeout(Math.min(30000, remainingGenerationTime())),
+          })
+          data = JSON.parse(result.response.text())
+          providerUsed = `gemini/${modelName}`
+          break
+        } catch (error) {
+          lastGeminiError = error
+          const failure = classifyGeminiError(error)
+          console.error(`Gemini ${modelName} failed (${failure.code}):`, String(error.message || '').slice(0, 200))
+          if (failure.code === 'AI_QUOTA_EXCEEDED' || failure.code === 'AI_PROVIDER_NOT_CONFIGURED' || failure.code === 'AI_TIMEOUT') {
+            break
           }
         }
       }
 
-      // Fallback: Emergent LLM Gateway (Claude Haiku) — only if Gemini failed
-      if (!data && process.env.EMERGENT_LLM_KEY && remainingGenerationTime() > 0) {
-        const openai = new OpenAI({
-          apiKey: process.env.EMERGENT_LLM_KEY,
-          baseURL: 'https://integrations.emergentagent.com/llm',
-        })
-        const completion = await openai.chat.completions.create({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 4000,
-          temperature: 0.7,
-          messages: [
-            { role: 'system', content: systemInstruction },
-            { role: 'user', content: userPrompt },
-          ],
-          tools: [{
-            type: 'function',
-            function: {
-              name: 'create_travel_guide',
-              description: 'Creează un ghid turistic complet și structurat',
-              parameters: articleSchema,
-            },
-          }],
-          tool_choice: { type: 'function', function: { name: 'create_travel_guide' } },
-        }, { timeout: Math.min(25000, remainingGenerationTime()) })
-        const toolCall = completion.choices?.[0]?.message?.tool_calls?.[0]
-        if (toolCall?.function?.arguments) {
-          data = JSON.parse(toolCall.function.arguments)
-          providerUsed = 'emergent'
-        }
-      }
-
       if (!data) {
-        if (!remainingGenerationTime()) {
-          return handleCORS(NextResponse.json({
-            error: 'Generarea articolului a depășit limita de timp',
-            detail: 'Serviciul AI a răspuns prea lent. Reîncearcă orașul; lotul va continua pentru celelalte.',
-            code: 'AI_TIMEOUT',
-          }, { status: 504 }))
-        }
-        return handleCORS(NextResponse.json({
-          error: 'AI nu a returnat un răspuns valid',
-          detail: 'Verifică cheile GEMINI_API_KEY sau EMERGENT_LLM_KEY.',
-        }, { status: 500 }))
+        const failure = lastGeminiError
+          ? classifyGeminiError(lastGeminiError)
+          : {
+              status: 504,
+              code: 'AI_TIMEOUT',
+              error: 'Generarea articolului a expirat',
+              detail: 'Google AI nu a răspuns în timpul disponibil. Reîncearcă orașul.',
+            }
+        return handleCORS(NextResponse.json(failure, { status: failure.status }))
       }
 
       // === REAL IMAGES via Pexels API ===
@@ -709,14 +684,6 @@ IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau dup�
   } catch (error) {
     console.error('API Error:', error)
     const msg = String(error.message || '')
-    // Recognize common LLM Gateway budget errors and return a user-friendly message.
-    if (msg.includes('Budget has been exceeded') || msg.includes('budget')) {
-      return handleCORS(NextResponse.json({
-        error: 'Buget LLM depășit',
-        detail: 'Cheia AI a atins limita de buget. Solicită buget suplimentar sau înlocuiește cheia EMERGENT_LLM_KEY.',
-        code: 'BUDGET_EXCEEDED',
-      }, { status: 402 })) // 402 = Payment Required
-    }
     if (msg.includes('rate limit') || msg.includes('429')) {
       return handleCORS(NextResponse.json({
         error: 'Prea multe cereri',
@@ -725,11 +692,8 @@ IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau dup�
       }, { status: 429 }))
     }
     if (/timed?\s*out|timeout|aborted/i.test(msg)) {
-      return handleCORS(NextResponse.json({
-        error: 'Serviciul AI a răspuns prea lent',
-        detail: 'Cererea către furnizorul AI a expirat. Încearcă din nou acest oraș; lotul va continua.',
-        code: 'AI_TIMEOUT',
-      }, { status: 504 }))
+      const failure = classifyGeminiError(error)
+      return handleCORS(NextResponse.json(failure, { status: failure.status }))
     }
     return handleCORS(NextResponse.json({ error: 'Internal server error', detail: error.message }, { status: 500 }))
   }
