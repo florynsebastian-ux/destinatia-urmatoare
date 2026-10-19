@@ -35,6 +35,7 @@ export default function AdminPage() {
   const [bulkCities, setBulkCities] = useState('')
   const [bulkLoading, setBulkLoading] = useState(false)
   const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0, results: [] })
+  const [geminiConfigured, setGeminiConfigured] = useState(null)
   const [bulkType, setBulkType] = useState('City Break')
   const [bulkDuration, setBulkDuration] = useState('5 zile')
   const [bulkBudget, setBulkBudget] = useState('mediu')
@@ -49,6 +50,24 @@ export default function AdminPage() {
       loadArticles()
     }
   }, [])
+
+  useEffect(() => {
+    if (view !== 'bulk' || !token) return
+    const controller = new AbortController()
+    fetch('/api/admin/ai-status', {
+      headers: { 'X-Admin-Token': token },
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || 'Nu s-a putut verifica Google AI')
+        setGeminiConfigured(Boolean(data.configured))
+      })
+      .catch((error) => {
+        if (error.name !== 'AbortError') setGeminiConfigured('error')
+      })
+    return () => controller.abort()
+  }, [view, token])
 
   const loadArticles = async () => {
     const r = await fetch('/api/articles?limit=100')
@@ -500,6 +519,10 @@ export default function AdminPage() {
                   <li>• Articolele se salvează automat — nu trebuie să apeși Save</li>
                   <li>• Default-uri actuale: <strong>{bulkType}</strong> · <strong>{bulkDuration}</strong> · buget <strong>{bulkBudget}</strong>{bulkFeatured ? ' · ⭐ Recomandate' : ''}</li>
                 </ul>
+              </div>
+              <div className="bg-sky-50 border border-sky-200 rounded-lg p-4 text-sm text-sky-900 mb-4">
+                <p className="font-semibold">Generator AI: Google Gemini direct</p>
+                <p className="text-xs mt-1">Emergent nu este folosit. Starea cheii <code className="bg-white px-1 rounded">GEMINI_API_KEY</code> în Production Vercel: {geminiConfigured === null ? 'se verifică…' : geminiConfigured === true ? 'configurată' : geminiConfigured === false ? 'lipsește — adaug-o în Vercel și redeployează' : 'nu s-a putut verifica; reîncarcă pagina'}.</p>
               </div>
               <Button
                 onClick={bulkGenerateAndSave}

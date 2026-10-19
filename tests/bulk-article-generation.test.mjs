@@ -86,6 +86,33 @@ test('budget exhaustion marks remaining cities as skipped', async () => {
   ])
 })
 
+test('stops the batch on Google quota exhaustion without calling Emergent or retrying other cities', async () => {
+  const calls = []
+  const results = await generateAndSaveBulkArticles({
+    lines: ['Hanoi', 'Hue', 'Da Nang'],
+    defaults: { duration: '5 zile', type: 'City Break', budget: 'mediu' },
+    featured: false,
+    token: 'token',
+    fetchImpl: async (url) => {
+      calls.push(url)
+      return response(429, {
+        code: 'AI_QUOTA_EXCEEDED',
+        error: 'Cota Google AI epuizată',
+        detail: 'Verifică limita Google AI.',
+      })
+    },
+    sleep: async () => {},
+  })
+
+  assert.equal(calls.length, 1)
+  assert.deepEqual(results.map(({ city, status, code }) => ({ city, status, code })), [
+    { city: 'Hanoi', status: 'error', code: 'AI_QUOTA_EXCEEDED' },
+    { city: 'Hue', status: 'error', code: 'SKIPPED' },
+    { city: 'Da Nang', status: 'error', code: 'SKIPPED' },
+  ])
+  assert.match(results[0].error, /Google AI/)
+})
+
 test('retries a generation timeout once and reports a clear message if it persists', async () => {
   let calls = 0
   const results = await generateAndSaveBulkArticles({
