@@ -521,6 +521,21 @@ IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau dup�
       // ============================================================
       let data = null
       let providerUsed = 'none'
+      const generationDeadline = Date.now() + 30000
+      const remainingGenerationTime = () => Math.max(0, generationDeadline - Date.now())
+      const runWithTimeout = async (operation, timeoutMs) => {
+        let timeout
+        try {
+          return await Promise.race([
+            operation,
+            new Promise((_, reject) => {
+              timeout = setTimeout(() => reject(new Error('AI_GENERATION_TIMEOUT')), timeoutMs)
+            }),
+          ])
+        } finally {
+          clearTimeout(timeout)
+        }
+      }
 
       const geminiKey = process.env.GEMINI_API_KEY
       // Try Gemini with retry on transient 503 (high demand).
@@ -532,6 +547,8 @@ IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau dup�
         const genAI = new GoogleGenerativeAI(geminiKey)
         outer: for (const modelName of geminiModels) {
           for (let attempt = 1; attempt <= 2; attempt++) {
+            const remaining = remainingGenerationTime()
+            if (!remaining) break outer
             try {
               const model = genAI.getGenerativeModel({
                 model: modelName,
@@ -543,11 +560,7 @@ IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau dup�
                   responseSchema: articleSchema,
                 },
               })
-              // Race the Gemini call against a 35s timeout so we never blow Vercel's function budget.
-              const result = await Promise.race([
-                model.generateContent(userPrompt),
-                new Promise((_, rej) => setTimeout(() => rej(new Error('GEMINI_TIMEOUT_35s')), 35000)),
-              ])
+              const result = await runWithTimeout(model.generateContent(userPrompt), Math.min(12000, remaining))
               const text = result.response.text()
               data = JSON.parse(text)
               providerUsed = `gemini/${modelName}`
@@ -556,7 +569,7 @@ IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau dup�
               const msg = String(e.message || '').slice(0, 200)
               console.error(`Gemini ${modelName} attempt ${attempt}:`, msg)
               // Retry only on 503 (overload); other errors → next model
-              if (msg.includes('503') && attempt < 2) {
+              if (msg.includes('503') && attempt < 2 && remainingGenerationTime() > 1200) {
                 await new Promise(r => setTimeout(r, 1200)) // single short backoff
                 continue
               }
@@ -567,7 +580,7 @@ IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau dup�
       }
 
       // Fallback: Emergent LLM Gateway (Claude Haiku) — only if Gemini failed
-      if (!data && process.env.EMERGENT_LLM_KEY) {
+      if (!data && process.env.EMERGENT_LLM_KEY && remainingGenerationTime() > 0) {
         const openai = new OpenAI({
           apiKey: process.env.EMERGENT_LLM_KEY,
           baseURL: 'https://integrations.emergentagent.com/llm',
@@ -589,7 +602,7 @@ IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau dup�
             },
           }],
           tool_choice: { type: 'function', function: { name: 'create_travel_guide' } },
-        })
+        }, { timeout: Math.min(15000, remainingGenerationTime()) })
         const toolCall = completion.choices?.[0]?.message?.tool_calls?.[0]
         if (toolCall?.function?.arguments) {
           data = JSON.parse(toolCall.function.arguments)
@@ -598,6 +611,13 @@ IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau dup�
       }
 
       if (!data) {
+        if (!remainingGenerationTime()) {
+          return handleCORS(NextResponse.json({
+            error: 'Generarea articolului a depășit limita de timp',
+            detail: 'Serviciul AI a răspuns prea lent. Reîncearcă orașul; lotul va continua pentru celelalte.',
+            code: 'AI_TIMEOUT',
+          }, { status: 504 }))
+        }
         return handleCORS(NextResponse.json({
           error: 'AI nu a returnat un răspuns valid',
           detail: 'Verifică cheile GEMINI_API_KEY sau EMERGENT_LLM_KEY.',
@@ -617,7 +637,11 @@ IMPORTANT: Răspunde DOAR cu un obiect JSON valid (fără text înainte sau dup�
           // Bias the query toward travel/destination context
           const q = `${query} ${data.city || ''} travel`.trim()
           const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(q)}&per_page=${perPage}&orientation=landscape`
-          const r = await fetch(url, { headers: { Authorization: key }, cache: 'no-store' })
+          const r = await fetch(url, {
+            headers: { Authorization: key },
+            cache: 'no-store',
+            signal: AbortSignal.timeout(6000),
+          })
           if (!r.ok) return []
           const j = await r.json()
           return (j.photos || []).map((p) => ({

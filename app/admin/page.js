@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import Link from 'next/link'
+import { generateAndSaveBulkArticles } from '@/lib/bulk-article-generation.mjs'
 
 const BLANK = {
   title: '', slug: '', excerpt: '', cover: '',
@@ -191,88 +192,24 @@ export default function AdminPage() {
     setBulkLoading(true)
     setBulkProgress({ current: 0, total: lines.length, results: [] })
 
-    const results = []
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i]
-      // Parse line. Format options:
-      //  "City"
-      //  "City, Country"
-      //  "City, Country | duration | type | budget"   (per-line overrides)
-      const segments = line.split('|').map(s => s.trim())
-      const cityPart = segments[0]
-      const parts = cityPart.split(',').map(p => p.trim())
-      const city = parts[0]
-      const country = parts[1] || ''
-      const duration = segments[1] || bulkDuration
-      const type = segments[2] || bulkType
-      const budget = segments[3] || bulkBudget
-
-      setBulkProgress({ current: i + 1, total: lines.length, results })
-      try {
-        const r = await fetch('/api/ai/generate-article', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
-          body: JSON.stringify({ city, country, type, duration, budget }),
-        })
-        // Robust parse: on Vercel timeout the response is HTML ("An error occurred..."), not JSON.
-        const raw = await r.text()
-        let d = null
-        try { d = JSON.parse(raw) } catch { d = null }
-        if (!d) {
-          const hint = r.status === 504 || raw.includes('An error occurred')
-            ? '⏱️ Timeout server (Gemini prea lent). Reîncearcă acest oraș individual.'
-            : `Răspuns invalid (HTTP ${r.status}). Reîncearcă.`
-          results.push({ city, status: 'error', error: hint })
-          continue
-        }
-        if (r.ok && d.article) {
-          // Auto-save the generated article
-          const saveBody = {
-            ...d.article,
-            featured: bulkFeatured, // ← user-controlled "recomandat" toggle
-            tags: Array.isArray(d.article.tags) ? d.article.tags : [],
-            attractions: d.article.attractions || [],
-            restaurants: d.article.restaurants || [],
-            tips: d.article.tips || [],
-            gallery: d.article.gallery || [],
-          }
-          delete saveBody.coverImageQuery
-          delete saveBody.galleryImageQueries
-          const saveR = await fetch('/api/ai/save-article', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
-            body: JSON.stringify(saveBody),
-          })
-          if (saveR.ok) {
-            results.push({ city, status: 'success', title: d.article.title, slug: d.article.slug })
-          } else {
-            results.push({ city, status: 'error', error: 'Eroare salvare' })
-          }
-        } else {
-          const errMsg = d.code === 'BUDGET_EXCEEDED'
-            ? '💰 Buget LLM depășit — solicită buget nou de la Emergent'
-            : d.code === 'RATE_LIMITED'
-              ? '⏳ Prea multe cereri — așteaptă și încearcă din nou'
-              : (d.detail || d.error || 'Eroare AI')
-          results.push({ city, status: 'error', error: errMsg, code: d.code })
-          // Stop early if budget exceeded — no point trying more articles
-          if (d.code === 'BUDGET_EXCEEDED') {
-            for (let j = i + 1; j < lines.length; j++) {
-              const remainCity = lines[j].split('|')[0].split(',')[0].trim()
-              results.push({ city: remainCity, status: 'error', error: '⏭️ Sărit (buget epuizat)', code: 'SKIPPED' })
-            }
-            break
-          }
-        }
-      } catch (e) {
-        results.push({ city, status: 'error', error: 'Eroare rețea: ' + (e.message || 'necunoscută') })
-      }
+    try {
+      const results = await generateAndSaveBulkArticles({
+        lines,
+        defaults: { duration: bulkDuration, type: bulkType, budget: bulkBudget },
+        featured: bulkFeatured,
+        token,
+        onProgress: setBulkProgress,
+      })
+      setBulkProgress({ current: lines.length, total: lines.length, results })
+      const saved = results.filter((result) => result.status === 'success').length
+      const failed = results.length - saved
+      toast[failed ? 'warning' : 'success'](`Gata! ${saved}/${results.length} articole salvate și publicate${failed ? `; ${failed} eșecuri` : ''}`)
+      if (saved) loadArticles()
+    } catch (error) {
+      toast.error(`Eroare la procesarea lotului: ${error.message || 'necunoscută'}`)
+    } finally {
+      setBulkLoading(false)
     }
-
-    setBulkProgress({ current: lines.length, total: lines.length, results })
-    setBulkLoading(false)
-    toast.success(`Gata! ${results.filter(r => r.status === 'success').length}/${results.length} articole publicate`)
-    loadArticles()
   }
 
   // Bulk regenerate meta descriptions (excerpts) via Gemini — SEO CTR booster.
