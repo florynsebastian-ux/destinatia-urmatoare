@@ -68,8 +68,10 @@ const FAQS = [
 ]
 
 export default async function HomePage() {
-  const featured = await getArticles({ featured: 'true', limit: '3' })
-  const popular = await getArticles({ limit: '6' })
+  const [featured, popular] = await Promise.all([
+    getArticles({ featured: 'true', limit: '3' }),
+    getArticles({ limit: '6' }),
+  ])
 
   const base = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.destinatiaurmatoare.eu'
 
